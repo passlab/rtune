@@ -11,7 +11,7 @@ defined objective during the computation.
 		git clone https://github.com/passlab/rtune.git
 		
 2. Build and install the RTune library. You can build and install in the directory you want. Commands in the following are for
-   building and installing in the `build` and `install` folder of the source tree. 
+   building and installing in the `build` and `install` folder under the source tree. 
 
 		cd rtune
 		mkdir build install
@@ -26,18 +26,21 @@ defined objective during the computation.
 
 		cd ../examples/jacobi-num_threads
 		make
+		export LD_LIBRARY_PATH=../../install/lib
 		./jacobi-rtune_num_threads
 		
 ##### LULESH for automatically tuning OpenMP num_threads for parallel region
 
 		cd ../LULESH-num_threads
 		make
+		export LD_LIBRARY_PATH=../../install/lib
 		./LULESH-rtune_num_threads
 		
 ##### Jacobi for automatically tuning computational precision according to the number of computing iteration
 
 		cd ../examples/jacobi-precision
 		make
+		export LD_LIBRARY_PATH=../../install/lib
 		./jacobi-rtune_precision
 		
 		
@@ -45,5 +48,6 @@ defined objective during the computation.
 
 		cd ../LULESH-boundary
 		make
+		export LD_LIBRARY_PATH=../../install/lib
 		./LULESH-boundary
 

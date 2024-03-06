@@ -136,11 +136,11 @@ typedef struct stvar {//The base of var, func and model
     int num_states;       //the current number of states
     int total_num_states; //total number of states to have
 
-    void *(*callback) (void *); //A callback can only use the values of the variable, i.e. it cannot change the value of
+    void (*callback) (void *); //A callback can only use the values of the variable, i.e. it cannot change the value of
                                 //of the variable. The callback must return (cannot call setjmp, etc).
     void *callback_arg;
 
-    void *(*applier) (void *); //applier is a function that take the var value as arg to apply the var to the caller env
+    void (*applier) (void *); //applier is a function that take the var value as arg to apply the var to the caller env
 
     void *(*provider) (void *);
     void * provider_arg;  //The corresponding application variable if provided, or a function that can be called to read the value
@@ -184,7 +184,7 @@ typedef struct rtune_var {
     rtune_var_update_kind_t update_lt; //update location and time
     rtune_var_update_kind_t update_policy; //random, random_unique, series, series-cyclic are policies for list and range only,
     int update_iteration_start; //When the initial sample is collected, which is the sampling_init_iteration count of the rtune_region iteration
-    int batch_size;      //how many iterations to update the variable and collect the sample
+    int batch_size;      //The amount of iterations for each update of the variable or for each collection of the sample
     int update_iteration_stride;    //The number of iterations between each sample
 
     int current_apply_index;
@@ -310,7 +310,7 @@ typedef struct rtune_objective {
     int num_vars; //num of independent variables that impact the objective func, thus the objective
 
     int num_funcs_input;                    //num of models in the input, the rest are constant/coefficient
-    void *(*callback) (void *);             //callback when the objective is met, or when the objective is used,
+    void (*callback) (void *);             //callback when the objective is met, or when the objective is used,
     void *callback_arg;
 
     float deviation_tolerance; /* absolute deviation tolerance */
@@ -377,9 +377,9 @@ void* rtune_var_add_range(rtune_region_t *region, char * name, int total_num_sta
 void* rtune_var_add_ext(rtune_region_t *region, char * name, int total_num_states, rtune_data_type_t type, void *(*provider) (void *), void * provider_arg);
 void* rtune_var_add_ext_diff(rtune_region_t *region, char * name, int total_num_states, rtune_data_type_t type, void *(*provider) (void *), void * provider_arg);
 void  rtune_var_set_update_schedule_attr(rtune_var_t * var, rtune_var_update_kind_t update_lt, rtune_var_update_kind_t update_policy, int update_iteration_start, int update_batch, int update_iteration_stride);
-void  rtune_var_set_callback(rtune_var_t *var, void *(*callback) (void *), void *arg); //can be used for adding callbacks for var, func and models
-void  rtune_var_set_applier_policy(rtune_var_t *var, void *(*applier) (void *), rtune_var_apply_policy_t apply_policy); //to set the applier and policy of the var
-void  rtune_var_set_applier(rtune_var_t *var, void *(*applier) (void *)); //to set the applier of the var. the applier is called when the var is updated.
+void  rtune_var_set_callback(rtune_var_t *var, void (*callback) (void *), void *arg); //can be used for adding callbacks for var, func and models
+void  rtune_var_set_applier_policy(rtune_var_t *var, void (*applier) (void *), rtune_var_apply_policy_t apply_policy); //to set the applier and policy of the var
+void  rtune_var_set_applier(rtune_var_t *var, void (*applier) (void *)); //to set the applier of the var. the applier is called when the var is updated.
 void  rtune_var_set_apply_policy(rtune_var_t * var, rtune_var_apply_policy_t apply_policy); //set the apply policy for the variables in each iteration 
 //helper
 void rtune_var_print_list_range(rtune_var_t * var, int count);
@@ -395,7 +395,7 @@ void* rtune_func_add_distance(rtune_region_t *region, char * name, rtune_data_ty
 
 void* rtune_func_add(rtune_region_t * region, rtune_kind_t kind, char * name, rtune_data_type_t type, int num_vars, int num_coefficients, ...);
 //add a function that will be modeled based on the input and function value, input are knowns, but not the function.
-void* rtune_func_add_model(rtune_region_t * region, rtune_kind_t kind, char * name, rtune_data_type_t type,void *(*provider) (void *), void * provider_arg, int num_vars, ...);
+rtune_func_t* rtune_func_add_model(rtune_region_t * region, rtune_kind_t kind, char * name, rtune_data_type_t type,void *(*provider) (void *), void * provider_arg, int num_vars, ...);
 void  rtune_func_set_update_schedule_attr(rtune_func_t * var, rtune_var_update_kind_t update_lt, rtune_var_update_kind_t update_policy, int update_iteration_start, int update_batch, int update_iteration_stride);
 
 //API for objectives, an objective is basically a flag to indicate whether a variable (var, func, model) meets certain criteria
@@ -406,7 +406,7 @@ rtune_objective_t * rtune_objective_add_select2(rtune_region_t *region, char *na
 
 rtune_objective_t * rtune_objective_add_select(rtune_region_t *region, char *name, rtune_objective_kind_t select_kind, int num_models, rtune_func_t * models[], int model_select[]); /* the purpose of selecting which model to use is dependent on the select */
 rtune_objective_t * rtune_objective_add_threshold(rtune_region_t *region, char * name, rtune_objective_kind_t threshold_kind, rtune_func_t *model, void *threshold); //going up/down to reach a threshold
-void rtune_objective_add_callback(rtune_objective_t obj, void *(*callback) (void *), void *arg);
+void rtune_objective_add_callback(rtune_objective_t * obj, void (*callback) (void *), void *arg);
 
 /**
  * API for setting the fidelity attr of an objective: to manage the fidelity of the model, 
