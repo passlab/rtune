@@ -670,8 +670,8 @@ void rtune_objective_set_apply_policy(rtune_objective_t * obj,  rtune_var_apply_
 }
 
 void rtune_objective_add_callback(rtune_objective_t * obj, void (*callback) (void *), void *arg) {
-	obj->callback = callback;
-	obj->callback_arg = arg;
+    obj->callback = callback;
+    obj->callback_arg = arg;
 
 }
 
@@ -1457,41 +1457,47 @@ void rtune_region_begin(rtune_region_t * region) {
         rtune_func_t *func = &region->funcs[i];
         if (func->status >= RTUNE_STATUS_UPDATE_SCHEDULE_COMPLETE) continue;
 
-        //check the variables to see which one is used to follow the schedule if the func's schedule is not set
-        //XXX: right now, at exactly only one variable of the function should be in the sampling stage.
-        int j;
-        rtune_var_t * avar = func->active_var; //active variable
-        if (avar != NULL) {
-            if (avar->status == RTUNE_STATUS_SAMPLING || avar->status == RTUNE_STATUS_UPDATE_COMPLETE) {
+        rtune_var_t * avar = NULL;
+        if (func->num_vars > 0) {
+            //check the variables to see which one is used to follow the schedule if the func's schedule is not set
+            //XXX: right now, at exactly only one variable of the function should be in the sampling stage.
+            int j;
+            avar = func->active_var; //active variable
+            if (avar != NULL) {
+                if (avar->status == RTUNE_STATUS_SAMPLING || avar->status == RTUNE_STATUS_UPDATE_COMPLETE) {
                 //active, use this one, so doing nothing
-            } else if (avar->status == RTUNE_STATUS_UPDATE_SCHEDULE_COMPLETE && func->status == RTUNE_STATUS_UPDATE_COMPLETE) {
-                func->status = RTUNE_STATUS_UPDATE_SCHEDULE_COMPLETE;
-                continue;
-            } else goto check_for_active_var;
-        } else { //not active anymore, check and find the next active var
-            check_for_active_var:;
-            avar = NULL;
-            for (j=0; j<func->num_vars; j++) {
-                rtune_var_t * tmp = func->input_varcoefs[j];
-                if (tmp->status == RTUNE_STATUS_SAMPLING || tmp->status == RTUNE_STATUS_UPDATE_COMPLETE) {
-                    func->active_var = tmp;
-                    avar = tmp;
-                    break;
+                } else if (avar->status == RTUNE_STATUS_UPDATE_SCHEDULE_COMPLETE && func->status == RTUNE_STATUS_UPDATE_COMPLETE) {
+                    func->status = RTUNE_STATUS_UPDATE_SCHEDULE_COMPLETE;
+                    continue;
+                } else goto check_for_active_var;
+            } else { //not active anymore, check and find the next active var
+                check_for_active_var:;
+                for (j=0; j<func->num_vars; j++) {
+                    rtune_var_t * tmp = func->input_varcoefs[j];
+                    if (tmp->status == RTUNE_STATUS_SAMPLING || tmp->status == RTUNE_STATUS_UPDATE_COMPLETE) {
+                        func->active_var = tmp;
+                        avar = tmp;
+                        break;
+                    }
                 }
+                if (avar == NULL) { func->active_var = NULL; }
             }
-            if (avar == NULL) { func->active_var = NULL; continue; }
         }
 
-        if (func->update_lt == RTUNE_DEFAULT_NONE) update_lt = avar->update_lt;
+        if (func->update_lt == RTUNE_DEFAULT_NONE && avar != NULL)
+            update_lt = avar->update_lt;
         else update_lt = func->update_lt;
+
         if (update_lt != RTUNE_UPDATE_REGION_BEGIN && update_lt != RTUNE_UPDATE_REGION_BEGIN_END &&
             update_lt != RTUNE_UPDATE_REGION_BEGIN_END_DIFF)
             continue;
 
-        if (func->update_policy == RTUNE_DEFAULT_NONE) update_policy = avar->update_policy;
+        if (func->update_policy == RTUNE_DEFAULT_NONE && avar != NULL)
+            update_policy = avar->update_policy;
         else update_policy = func->update_policy;
 
-        if (func->update_iteration_start == RTUNE_DEFAULT_NONE) update_iteration_start = avar->update_iteration_start;
+        if (func->update_iteration_start == RTUNE_DEFAULT_NONE && avar != NULL)
+            update_iteration_start = avar->update_iteration_start;
         else update_iteration_start = func->update_iteration_start;
 
         batch_index = count - update_iteration_start;
@@ -1500,10 +1506,12 @@ void rtune_region_begin(rtune_region_t * region) {
             func->status = RTUNE_STATUS_SAMPLING;
         }
 
-        if (func->batch_size == RTUNE_DEFAULT_NONE) batch_size = avar->batch_size;
+        if (func->batch_size == RTUNE_DEFAULT_NONE && avar != NULL)
+            batch_size = avar->batch_size;
         else batch_size = func->batch_size;
 
-        if (func->update_iteration_stride == RTUNE_DEFAULT_NONE) update_iteration_stride = avar->update_iteration_stride;
+        if (func->update_iteration_stride == RTUNE_DEFAULT_NONE && avar != NULL)
+            update_iteration_stride = avar->update_iteration_stride;
         else update_iteration_stride = func->update_iteration_stride;
 
         batch_index = batch_index % (batch_size + update_iteration_stride);

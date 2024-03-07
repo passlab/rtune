@@ -60,7 +60,7 @@ typedef enum rtune_kind {
 typedef enum rtune_status {
     RTUNE_STATUS_CREATED,
     RTUNE_STATUS_SAMPLING, //collect sample, profiling for a var/func/objective/region
-    RTUNE_STATUS_UPDATE_COMPLETE, //update of the var/func/objective/region are completed
+    RTUNE_STATUS_UPDATE_COMPLETE, //update of the var/func/objective/region are completed, but in the middle of a schedule.
     RTUNE_STATUS_UPDATE_SCHEDULE_COMPLETE, //update of the var/func/objective/region are completed, the batch for the last update is complete as well.
     RTUNE_STATUS_MODELED, //models for a func, or objective funcs have been built
     RTUNE_STATUS_OBJECTIVE_TO_BE_EVALUATED, //a temp status to indicate that the obj should be evaluated in the current iteration
@@ -417,6 +417,7 @@ void rtune_objective_set_var_sample_attr(rtune_objective_t *obj, int sample_star
 void rtune_objective_set_fidelity_attr(rtune_objective_t *obj, float deviation_tolerance, int fidelity_window, int lookup_window);
 int  rtune_objective_is_met(rtune_objective_t *obj); //check whether objective is met or not */
 void rtune_objective_set_search_strategy(rtune_objective_t *obj, rtune_objective_search_strategy_t search_strategy);
+
 void rtune_objective_set_apply_policy(rtune_objective_t * obj,  rtune_var_apply_policy_t apply_policy); //set the apply policy for all the variables that are the input for the object func
 
 //API for callback, which is a function to be called when a var/obj/end is updated/evaluated, etc. TODO: need more scenario to show its usage
