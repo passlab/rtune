@@ -273,9 +273,24 @@ typedef enum rtune_objective_search_strategy {
 
 #define RTUNE_OBJECTIVE_SEARCH_DEFAULT RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_ON_THE_FLY
 
-#define DEFAULT_DEVIATION_TOLERANCE 0.01
-#define DEFAULT_FIDELITY_WINDOW 2
-#define DEFAULT_LOOKUP_WINDOW 4
+// For objectives: 10% deviation tolerance, 2 fidelity window and 4 lookup window
+#define DEFAULT_deviation_tolerance 0.10
+#define DEFAULT_fidelity_window 2
+#define DEFAULT_lookup_window 4
+
+// For variables and functions
+#define DEFAULT_update_iteration_start 0
+#define DEFAULT_batch_size 1
+#define DEFAULT_update_iteration_stride 0
+
+// For variables
+#define DEFAULT_VAR_update_lt RTUNE_UPDATE_REGION_BEGIN
+//#define DEFAULT_VAR_update_policy //kind specific so cannot set one for all kinds
+#define DEFAULT_VAR_apply_policy RTUNE_VAR_APPLY_ON_UPDATE
+
+// For functions
+#define DEFAULT_FUNC_update_lt RTUNE_UPDATE_REGION_END
+#define DEFAULT_update_policy RTUNE_UPDATE_BATCH_STRAIGHT
 
 /**
  * @brief ideally, an objective function include a variable to store the value of the function, multiple variables, and an optional array-based binary expression tree for 
@@ -293,6 +308,9 @@ typedef struct rtune_objective {
     rtune_objective_search_strategy_t search_strategy; //when the obj should be evaluated, after the funcs are completed updated or while they are being updated
     rtune_func_t * inputs[MAX_NUM_VARS];      //The inputs that are used to determine the objectives, typically are either objective function
                                               // or constant depending on the objective kind
+    int num_vars; //num of independent variables that impact the objective func, thus the objective
+    int num_funcs_input;                    //num of models in the input, the rest are constant/coefficient
+
     utype_t search_cache[MAX_NUM_VARS]; //the search cache is used to store the temp func value that currently meets the objective, but not before all the variables of the
                                         //obj functions are evaluated. E.g. for min objective, it stores the min of the current objective function before it is fully updated.
     int search_cache_index[MAX_NUM_VARS];
@@ -305,11 +323,8 @@ typedef struct rtune_objective {
                               //means that for the similar value of the obj function for this objective, a value toward greater (max) should be used
         int last_iteration_applied; //the last iteration this config is applied
         rtune_var_apply_policy_t apply_policy;  //XXX: Not sure whether we need this objective-specific var apply policy since if each var is independently applied, it has its own apply_policy. We need this 
-                                                //only if there is situation that we need apply a var differently according to the var used by the different objectives
+                                                //only if there is situation that we need apply a var differently according to the different objectives that use the var
     } config[MAX_NUM_VARS];
-    int num_vars; //num of independent variables that impact the objective func, thus the objective
-
-    int num_funcs_input;                    //num of models in the input, the rest are constant/coefficient
     void (*callback) (void *);             //callback when the objective is met, or when the objective is used,
     void *callback_arg;
 

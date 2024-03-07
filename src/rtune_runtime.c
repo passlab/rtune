@@ -81,12 +81,20 @@ void *rtune_var_add_list(rtune_region_t *region, char *name, int total_num_state
     var->list_range_setting.list.list_values = values;
     var->list_range_setting.list.list_names = valname;
 
+    var->update_lt = DEFAULT_VAR_update_lt;
+    var->update_policy = RTUNE_UPDATE_LIST_SERIES;
+    var->update_iteration_start = DEFAULT_update_iteration_start;
+    var->batch_size = DEFAULT_batch_size;
+    var->update_iteration_stride = DEFAULT_update_iteration_stride;
+    var->apply_policy = DEFAULT_VAR_apply_policy;
+
     stvar_t *stvar = &var->stvar;
     stvar->name = name;
     stvar->type = type;
     stvar->num_states = 0;
     //allocate memory for both states and count_value array
     stvar->total_num_states = total_num_states;
+    var->count_value = (int*) malloc(sizeof(int) * var->num_unique_values);
     rtune_malloc_4_states(stvar);
 
     //no need to initialize other fields since they are memset as 0 when the region is initialized
@@ -123,11 +131,19 @@ void *rtune_var_add_range(rtune_region_t *region, char *name, int total_num_stat
             break;
     }
 
+    var->update_lt = DEFAULT_VAR_update_lt;
+    var->update_policy = RTUNE_UPDATE_LIST_SERIES;
+    var->update_iteration_start = DEFAULT_update_iteration_start;
+    var->batch_size = DEFAULT_batch_size;
+    var->update_iteration_stride = DEFAULT_update_iteration_stride;
+    var->apply_policy = DEFAULT_VAR_apply_policy;
+
     stvar_t *stvar = &var->stvar;
     stvar->name = name;
     stvar->type = type;
     stvar->num_states = 0;
     //allocate memory for both states and count_value array
+    var->count_value = (int*) malloc(sizeof(int) * var->num_unique_values);
     stvar->total_num_states = total_num_states;
     rtune_malloc_4_states(stvar);
 
@@ -143,6 +159,13 @@ void *rtune_var_add_ext(rtune_region_t *region, char *name, int total_num_states
     rtune_var_t *var = &region->vars[i];
     var->num_unique_values = 0;
     var->kind = RTUNE_VAR_EXT;
+
+    var->update_lt = DEFAULT_VAR_update_lt;
+    var->update_policy = RTUNE_UPDATE_BATCH_STRAIGHT;
+    var->update_iteration_start = DEFAULT_update_iteration_start;
+    var->batch_size = DEFAULT_batch_size;
+    var->update_iteration_stride = DEFAULT_update_iteration_stride;
+    var->apply_policy = DEFAULT_VAR_apply_policy;
 
     stvar_t *stvar = &var->stvar;
     stvar->provider = provider;
@@ -269,10 +292,6 @@ void rtune_var_set_update_schedule_attr(rtune_var_t *var, rtune_var_update_kind_
                                rtune_var_update_kind_t update_policy, int update_iteration_start, int batch_size, int update_iteration_stride) {
     stvar_t *stvar = &var->stvar;
 
-    //allocate memory for value count
-    if (var->kind == RTUNE_VAR_LIST || var->kind == RTUNE_VAR_RANGE)
-        var->count_value = (int*) malloc(sizeof(int) * var->num_unique_values); //This is only used for list and range var
-
     var->update_lt = update_lt;
     var->update_policy = update_policy;
     var->update_iteration_start = update_iteration_start;
@@ -345,19 +364,20 @@ void *rtune_func_add(rtune_region_t *region, rtune_kind_t kind, char *name, rtun
     func->num_coefficients = num_coefficients;
 
     //set the default update time/policy/iteration_start/batch/stride
-    func->update_lt = RTUNE_DEFAULT_NONE;
-    func->update_policy = RTUNE_DEFAULT_NONE;
-    func->update_iteration_start = RTUNE_DEFAULT_NONE;
-    func->batch_size = RTUNE_DEFAULT_NONE;
-    func->update_iteration_stride = RTUNE_DEFAULT_NONE;
+    func->update_lt = DEFAULT_FUNC_update_lt;
+    func->update_policy = DEFAULT_update_policy;
+    func->update_iteration_start = DEFAULT_update_iteration_start;
+    func->batch_size = DEFAULT_batch_size;
+    func->update_iteration_stride = DEFAULT_update_iteration_stride;
+
     int i;
     va_list args;
     va_start(args, num_coefficients);
-    int total_num_states = 0;
+    int total_num_states = 1;
     for (i = 0; i < num_vars; i++) {
         rtune_var_t *var = va_arg(args, rtune_var_t *);
         var->usedByFuncs[var->num_uses++] = func; //set the var dependency link
-        total_num_states += var->stvar.total_num_states; //The number of states of the func is the products of the states of all input vars
+        total_num_states *= var->stvar.total_num_states; //The number of states of the func is the products of the states of all input vars
         func->input_varcoefs[i] = var;
     }
     for (; i < num_vars + num_coefficients; i++) {
@@ -402,20 +422,20 @@ rtune_func_t* rtune_func_add_model(rtune_region_t * region, rtune_kind_t kind, c
     func->num_coefficients = -1;
 
     //set the default update time/policy/iteration_start/batch/stride
-    func->update_lt = RTUNE_DEFAULT_NONE;
-    func->update_policy = RTUNE_DEFAULT_NONE;
-    func->update_iteration_start = RTUNE_DEFAULT_NONE;
-    func->batch_size = RTUNE_DEFAULT_NONE;
-    func->update_iteration_stride = RTUNE_DEFAULT_NONE;
+    func->update_lt = DEFAULT_FUNC_update_lt;
+    func->update_policy = DEFAULT_update_policy;
+    func->update_iteration_start = DEFAULT_update_iteration_start;
+    func->batch_size = DEFAULT_batch_size;
+    func->update_iteration_stride = DEFAULT_update_iteration_stride;
 
     int i;
     va_list args;
     va_start(args, num_vars);
-    int total_num_states = 0;
+    int total_num_states = 1;
     for (i = 0; i < num_vars; i++) {
         rtune_var_t *var = va_arg(args, rtune_var_t *);
         var->usedByFuncs[var->num_uses++] = func; //set the var dependency link
-        total_num_states += var->stvar.total_num_states; //The number of states of the func is the products of the states of all input vars
+        total_num_states *= var->stvar.total_num_states; //The number of states of the func is the products of the states of all input vars
         func->input_varcoefs[i] = var;
     }
     va_end(args);
@@ -491,9 +511,9 @@ rtune_objective_t *rtune_objective_add_min(rtune_region_t *region, char *name, r
     obj->name = name;
     obj->status = RTUNE_STATUS_CREATED;
     region->num_objs++;
-    obj->deviation_tolerance = DEFAULT_DEVIATION_TOLERANCE;
-    obj->fidelity_window = DEFAULT_FIDELITY_WINDOW;
-    obj->lookup_window = DEFAULT_LOOKUP_WINDOW;
+    obj->deviation_tolerance = DEFAULT_deviation_tolerance;
+    obj->fidelity_window = DEFAULT_fidelity_window;
+    obj->lookup_window = DEFAULT_lookup_window;
     obj->search_strategy = RTUNE_OBJECTIVE_SEARCH_DEFAULT;
 
     func->objectives[func->num_objs++] = obj;
@@ -512,9 +532,9 @@ rtune_objective_t *rtune_objective_add_max(rtune_region_t *region, char *name, r
     obj->name = name;
     obj->status = RTUNE_STATUS_CREATED;
     region->num_objs++;
-    obj->deviation_tolerance = DEFAULT_DEVIATION_TOLERANCE;
-    obj->fidelity_window = DEFAULT_FIDELITY_WINDOW;
-    obj->lookup_window = DEFAULT_LOOKUP_WINDOW;
+    obj->deviation_tolerance = DEFAULT_deviation_tolerance;
+    obj->fidelity_window = DEFAULT_fidelity_window;
+    obj->lookup_window = DEFAULT_lookup_window;
     obj->search_strategy = RTUNE_OBJECTIVE_SEARCH_DEFAULT;
 
     func->objectives[func->num_objs++] = obj;
@@ -533,9 +553,9 @@ rtune_objective_t *rtune_objective_add_intersection(rtune_region_t *region, char
     obj->name = name;
     obj->status = RTUNE_STATUS_CREATED;
     region->num_objs++;
-    obj->deviation_tolerance = DEFAULT_DEVIATION_TOLERANCE;
-    obj->fidelity_window = DEFAULT_FIDELITY_WINDOW;
-    obj->lookup_window = DEFAULT_LOOKUP_WINDOW;
+    obj->deviation_tolerance = DEFAULT_deviation_tolerance;
+    obj->fidelity_window = DEFAULT_fidelity_window;
+    obj->lookup_window = DEFAULT_lookup_window;
     obj->search_strategy = RTUNE_OBJECTIVE_SEARCH_DEFAULT;
 
     model1->objectives[model1->num_objs++] = obj;
@@ -559,9 +579,9 @@ rtune_objective_t *rtune_objective_add_select2(rtune_region_t *region, char *nam
     obj->name = name;
     obj->status = RTUNE_STATUS_CREATED;
     region->num_objs++;
-    obj->deviation_tolerance = DEFAULT_DEVIATION_TOLERANCE;
-    obj->fidelity_window = DEFAULT_FIDELITY_WINDOW;
-    obj->lookup_window = DEFAULT_LOOKUP_WINDOW;
+    obj->deviation_tolerance = DEFAULT_deviation_tolerance;
+    obj->fidelity_window = DEFAULT_fidelity_window;
+    obj->lookup_window = DEFAULT_lookup_window;
     obj->search_strategy = RTUNE_OBJECTIVE_SEARCH_DEFAULT;
 
     model1->objectives[model1->num_objs++] = obj;
@@ -588,9 +608,9 @@ rtune_objective_t *rtune_objective_add_select(rtune_region_t *region, char *name
     obj->name = name;
     obj->status = RTUNE_STATUS_CREATED;
     region->num_objs++;
-    obj->deviation_tolerance = DEFAULT_DEVIATION_TOLERANCE;
-    obj->fidelity_window = DEFAULT_FIDELITY_WINDOW;
-    obj->lookup_window = DEFAULT_LOOKUP_WINDOW;
+    obj->deviation_tolerance = DEFAULT_deviation_tolerance;
+    obj->fidelity_window = DEFAULT_fidelity_window;
+    obj->lookup_window = DEFAULT_lookup_window;
     obj->search_strategy = RTUNE_OBJECTIVE_SEARCH_DEFAULT;
 
     for (i=0; i<num_models;i++) {
@@ -617,9 +637,9 @@ rtune_objective_t *rtune_objective_add_threshold(rtune_region_t *region, char *n
     obj->name = name;
     obj->status = RTUNE_STATUS_CREATED;
     region->num_objs++;
-    obj->deviation_tolerance = DEFAULT_DEVIATION_TOLERANCE;
-    obj->fidelity_window = DEFAULT_FIDELITY_WINDOW;
-    obj->lookup_window = DEFAULT_LOOKUP_WINDOW;
+    obj->deviation_tolerance = DEFAULT_deviation_tolerance;
+    obj->fidelity_window = DEFAULT_fidelity_window;
+    obj->lookup_window = DEFAULT_lookup_window;
     obj->search_strategy = RTUNE_OBJECTIVE_SEARCH_DEFAULT;
 
     model->objectives[model->num_objs++] = obj;
@@ -639,9 +659,9 @@ rtune_objective_t *rtune_objective_add_threshold_down(rtune_region_t *region, ch
     obj->name = name;
     obj->status = RTUNE_STATUS_CREATED;
     region->num_objs++;
-    obj->deviation_tolerance = DEFAULT_DEVIATION_TOLERANCE;
-    obj->fidelity_window = DEFAULT_FIDELITY_WINDOW;
-    obj->lookup_window = DEFAULT_LOOKUP_WINDOW;
+    obj->deviation_tolerance = DEFAULT_deviation_tolerance;
+    obj->fidelity_window = DEFAULT_fidelity_window;
+    obj->lookup_window = DEFAULT_lookup_window;
     obj->search_strategy = RTUNE_OBJECTIVE_SEARCH_DEFAULT;
 
     model->objectives[model->num_objs++] = obj;
@@ -1103,14 +1123,15 @@ static int rtune_objective_min_unimodal_gradient_1var(rtune_objective_t *obj) {
 
             float deviation_tolerance = obj->deviation_tolerance;
             double deviation = func1 - func0;
-            if (fabs(deviation / func1) <= deviation_tolerance && deviation >= 0) {//must see consecutive increase
+            double deviationPercentage = fabs(deviation)/func1;
+            if (deviationPercentage <= deviation_tolerance && deviation >= 0) {//must see consecutive increase
                 trend_increasing++;
-                printf("trend increasing from [%d]:%.2f->[%d]:%.2f\n", i-1, func0, i, func1);
+                printf("trend increasing from [%d]:%.2f->[%d]:%.2f (%.2f%%) and within tolerance(%0.2f%%)\n", i-1, func0, i, func1, deviationPercentage * 100, deviation_tolerance*100);
                 if (trend_increasing >= obj->fidelity_window) { //trend_increasing should be at least the same as fidelity window consecutively to be considered as obj being met
                     int index = num_states - trend_increasing - 1;
-                    printf("********* min (%d) reached with %d (fidelity window) increasing ****************\n", index, obj->fidelity_window);
+                    printf("********* min (%d) reached within %d (fidelity window) increasing ****************\n", index, obj->fidelity_window);
                     return index;
-                }
+                } else {}
             } else { //deviation == 0,
                 return -1;
             }
@@ -1125,7 +1146,7 @@ static int rtune_objective_min_unimodal_gradient_1var(rtune_objective_t *obj) {
     TYPE min = states[0];                          \
     int i;  minIndex = 0;                          \
     for(i=0; i<stvar->num_states; i++) {           \
-            if (states[i] < min) {            \
+            if (states[i] <= min) {            \
                 min = states[i];                \
                 minIndex = i;                  \
             }                                 \
@@ -1575,41 +1596,46 @@ void rtune_region_end(rtune_region_t * region) {
         rtune_func_t *func = &region->funcs[i];
         if (func->status >= RTUNE_STATUS_UPDATE_SCHEDULE_COMPLETE) continue;
 
-        //check the variables to see which one is used to follow the schedule if the func's schedule is not set
-        //XXX: right now, at exactly only one variable of the function should be in the sampling stage.
-        int j;
-        rtune_var_t *avar = func->active_var; //active variable
-        if (avar != NULL) {
-            if (avar->status == RTUNE_STATUS_SAMPLING || avar->status == RTUNE_STATUS_UPDATE_COMPLETE) {
+        rtune_var_t *avar = NULL;
+        if (func->num_vars > 0) {
+            //check the variables to see which one is used to follow the schedule if the func's schedule is not set
+            //XXX: right now, at exactly only one variable of the function should be in the sampling stage.
+            avar = func->active_var; //active variable
+            if (avar != NULL) {
+                if (avar->status == RTUNE_STATUS_SAMPLING || avar->status == RTUNE_STATUS_UPDATE_COMPLETE) {
                 //active, use this one, so doing nothing
-            } else goto check_for_active_var;
-        } else { //not active anymore, check and find the next active var
-            check_for_active_var:;
-            avar = NULL;
-            for (j = 0; j < func->num_vars; j++) {
-                rtune_var_t *tmp = func->input_varcoefs[j];
-                if (tmp->status == RTUNE_STATUS_SAMPLING || tmp->status == RTUNE_STATUS_UPDATE_COMPLETE) {
-                    func->active_var = tmp;
-                    avar = tmp;
-                    break;
+                } else goto check_for_active_var;
+            } else { //not active anymore, check and find the next active var
+                check_for_active_var:;
+                int j;
+                for (j = 0; j < func->num_vars; j++) {
+                    rtune_var_t *tmp = func->input_varcoefs[j];
+                    if (tmp->status == RTUNE_STATUS_SAMPLING || tmp->status == RTUNE_STATUS_UPDATE_COMPLETE) {
+                        func->active_var = tmp;
+                        avar = tmp;
+                        break;
+                    }
                 }
-            }
-            if (avar == NULL) {
-                func->active_var = NULL;
-                continue;
+                if (avar == NULL) {
+                    func->active_var = NULL;
+                }
             }
         }
 
-        if (func->update_lt == RTUNE_DEFAULT_NONE) update_lt = avar->update_lt;
+        if (func->update_lt == RTUNE_DEFAULT_NONE && avar != NULL)
+        	update_lt = avar->update_lt;
         else update_lt = func->update_lt;
+
         if (update_lt != RTUNE_UPDATE_REGION_END && update_lt != RTUNE_UPDATE_REGION_BEGIN_END &&
             update_lt != RTUNE_UPDATE_REGION_BEGIN_END_DIFF)
             continue;
 
-        if (func->update_policy == RTUNE_DEFAULT_NONE) update_policy = avar->update_policy;
+        if (func->update_policy == RTUNE_DEFAULT_NONE && avar != NULL)
+        	update_policy = avar->update_policy;
         else update_policy = func->update_policy;
 
-        if (func->update_iteration_start == RTUNE_DEFAULT_NONE) update_iteration_start = avar->update_iteration_start;
+        if (func->update_iteration_start == RTUNE_DEFAULT_NONE && avar != NULL)
+        	update_iteration_start = avar->update_iteration_start;
         else update_iteration_start = func->update_iteration_start;
 
         batch_index = count - update_iteration_start;
@@ -1618,7 +1644,7 @@ void rtune_region_end(rtune_region_t * region) {
             if (update_lt == RTUNE_UPDATE_REGION_END) func->status = RTUNE_STATUS_SAMPLING;
         }
 
-        if (func->batch_size == RTUNE_DEFAULT_NONE) batch_size = avar->batch_size;
+        if (func->batch_size == RTUNE_DEFAULT_NONE && avar != NULL) batch_size = avar->batch_size;
         else batch_size = func->batch_size;
         if (func->update_iteration_stride == RTUNE_DEFAULT_NONE)
             update_iteration_stride = avar->update_iteration_stride;
@@ -1644,8 +1670,8 @@ void rtune_region_end(rtune_region_t * region) {
         }
 
         if (index >= 0) {//update the inputs of this new func value
-            int *inputs = &func->input[index *
-                                       func->num_vars]; //input is a 2-D array of int [total_num_states][num_vars]
+            int *inputs = &func->input[index * func->num_vars]; //input is a 2-D array of int [total_num_states][num_vars]
+            int j;
             for (j = 0; j < func->num_vars; j++) {
                 //The input of the func from the var is always the last state of the var as it is latest update since
                 //the var of a func is only updated one a time (by restricting their schedule to not overlap)
@@ -1700,7 +1726,7 @@ void rtune_region_end(rtune_region_t * region) {
                     index = rtune_objective_min_unimodal_gradient_1var(obj);
                     if (index >= 0) {
                         var_index = obj->inputs[0]->input[index];
-                        printf("min objective is met: index: %d, var: %d, func: %.2f", index,
+                        printf("min objective is met: index: %d, var: %d, func: %.2f\n", index,
                                ((short *) (obj->inputs[0]->input_varcoefs[0]->stvar.states))[var_index],
                                ((double *) (obj->inputs[0]->stvar.states))[index]);
                         obj->status = RTUNE_STATUS_OBJECTIVE_MET;
@@ -1713,16 +1739,16 @@ void rtune_region_end(rtune_region_t * region) {
                     obj->status = RTUNE_STATUS_OBJECTIVE_MET;
                     var_index = obj->inputs[0]->input[index];
                     if (index >= 0)
-                        printf("min objective is met: index: %d, var: %d, func: %.2f", index,
+                        printf("min objective is met: index: %d, var: %d, func: %.2f\n", index,
                                ((short *) (obj->inputs[0]->input_varcoefs[0]->stvar.states))[var_index],
                                ((double *) (obj->inputs[0]->stvar.states))[index]);
                     printf("\n");
                 } else if (obj->search_strategy == RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_ON_THE_FLY) {
-                    printf("Evaluating min objective with exhaustive on the fly ...: ");
+                    printf("Evaluating min objective with exhaustive search on the fly ...: ");
                     index = rtune_objective_evaluate_min_exhaustive_on_the_fly(obj);
                     var_index = obj->inputs[0]->input[index];
                     if (index >= 0)
-                        printf("min objective is met: index: %d, var: %d, func: %.2f", index,
+                        printf("min objective is met: index: %d, var: %d, func: %.2f\n", index,
                                ((short *) (obj->inputs[0]->input_varcoefs[0]->stvar.states))[var_index],
                                ((double *) (obj->inputs[0]->stvar.states))[index]);
                     printf("\n");
@@ -1731,7 +1757,12 @@ void rtune_region_end(rtune_region_t * region) {
                 }
 
                 if (obj->status == RTUNE_STATUS_OBJECTIVE_MET && var_index > 0) {
+                	//apply the variable configuration for the objective that is just met
+                	rtune_var_t * var = obj->inputs[0]->input_varcoefs[0];
+                	rtune_stvar_apply(&var->stvar, var_index);
 
+                	//call the callback of the objective
+                	if (obj->callback != NULL) obj->callback(obj->callback_arg);
                 }
                 break;
             }
@@ -1749,7 +1780,7 @@ void rtune_region_end(rtune_region_t * region) {
                     index = rtune_objective_max_unimodal_gradient_1var(obj);
                     if (index >= 0) {
                         var_index = obj->inputs[0]->input[index];
-                        printf("max objective is met: index: %d, var: %d, func: %.2f", index,
+                        printf("max objective is met: index: %d, var: %d, func: %.2f\n", index,
                                ((short *) (obj->inputs[0]->input_varcoefs[0]->stvar.states))[var_index],
                                ((double *) (obj->inputs[0]->stvar.states))[index]);
                         obj->status = RTUNE_STATUS_OBJECTIVE_MET;
@@ -1762,7 +1793,7 @@ void rtune_region_end(rtune_region_t * region) {
                     obj->status = RTUNE_STATUS_OBJECTIVE_MET;
                     var_index = obj->inputs[0]->input[index];
                     if (index >= 0)
-                        printf("max objective is met: index: %d, var: %d, func: %.2f", index,
+                        printf("max objective is met: index: %d, var: %d, func: %.2f\n", index,
                                ((short *) (obj->inputs[0]->input_varcoefs[0]->stvar.states))[var_index],
                                ((double *) (obj->inputs[0]->stvar.states))[index]);
                     printf("\n");
@@ -1771,7 +1802,7 @@ void rtune_region_end(rtune_region_t * region) {
                     index = rtune_objective_evaluate_min_exhaustive_on_the_fly(obj);
                     var_index = obj->inputs[0]->input[index];
                     if (index >= 0)
-                        printf("max objective is met: index: %d, var: %d, func: %.2f", index,
+                        printf("max objective is met: index: %d, var: %d, func: %.2f\n", index,
                                ((short *) (obj->inputs[0]->input_varcoefs[0]->stvar.states))[var_index],
                                ((double *) (obj->inputs[0]->stvar.states))[index]);
                     printf("\n");
@@ -1846,7 +1877,7 @@ void rtune_region_add_sysvar(rtune_region_t *lgp, int num_val)
     int num_var = lgp->num_var;
     int exeTimeVar = rtune_region_add_double_var(lgp, "ExeTime", num_val, 0.0, 0.0, 0.0);
     rtune_region_set_var_provider(lgp, exeTimeVar, (void *)&read_timer_ms, NULL);
-
+    rtune_objective_min_unimodal_gradient_1var
     int maxNumThreads = 72;
     int numThreadVar = rtune_region_add_int_var(lgp, "NumThread", num_val, 1, maxNumThreads, 2);
     rtune_region_set_var_provider(lgp, numThreadVar, NULL, NULL);
