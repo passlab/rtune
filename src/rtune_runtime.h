@@ -120,6 +120,57 @@ typedef union unified_type {
     void * _typed_value;
 } utype_t;
 
+typedef enum rtune_objective_kind {
+    RTUNE_OBJECTIVE_MIN,
+    RTUNE_OBJECTIVE_MAX,
+    RTUNE_OBJECTIVE_INTERSECTION,
+    RTUNE_OBJECTIVE_SELECT_MIN,
+    RTUNE_OBJECTIVE_SEELCT_MAX,
+    RTUNE_OBJECTIVE_THRESHOLD,
+    RTUNE_OBJECTIVE_THRESHOLD_UP,
+    RTUNE_OBJECTIVE_THRESHOLD_DOWN,
+} rtune_objective_kind_t;
+
+/**
+ * var search strategy in order to meet the objective
+ */
+typedef enum rtune_objective_search_strategy {
+    /* search strategy */
+    RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_AFTER_COMPLETE,
+    RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_ON_THE_FLY,
+    RTUNE_OBJECTIVE_SEARCH_UNIMODAL_ON_THE_FLY,
+    RTUNE_OBJECTIVE_SEARCH_RANDOM,
+    RTUNE_OBJECTIVE_SEARCH_NELDER_MEAD, //simplex method
+    RTUNE_OBJECTIVE_SEARCH_BINARY_GRADIENT,
+    RTUNE_OBJECTIVE_SEARCH_QUATERNARY_GRADIENT,
+    RTUNE_OBJECTIVE_SEARCH_OCTAL_GRADIENT,
+    RTUNE_OBJECTIVE_SEARCH_HEX_GRADIENT,
+    //The inhouse binary gradient approach: given a known number of sorted input (x1,x2,...x0,...,xn) for a variable X,
+    //x0 is the value in the middle, collect f(x1) (or f(xn)) and f(x0), calculate the gradient g(x1->x0) = (f(x0) - f(x1))/(x0 - x1).
+    //For minization, if g(x1->x0) > 0;
+} rtune_objective_search_strategy_t;
+
+#define RTUNE_OBJECTIVE_SEARCH_DEFAULT RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_ON_THE_FLY
+
+// For objectives: 10% deviation tolerance, 2 fidelity window and 4 lookup window
+#define DEFAULT_deviation_tolerance 0.10
+#define DEFAULT_fidelity_window 2
+#define DEFAULT_lookup_window 4
+
+// For variables and functions
+#define DEFAULT_update_iteration_start 0
+#define DEFAULT_batch_size 1
+#define DEFAULT_update_iteration_stride 0
+
+// For variables
+#define DEFAULT_VAR_update_lt RTUNE_UPDATE_REGION_BEGIN
+//#define DEFAULT_VAR_update_policy //kind specific so cannot set one for all kinds
+#define DEFAULT_VAR_apply_policy RTUNE_VAR_APPLY_ON_UPDATE
+
+// For functions
+#define DEFAULT_FUNC_update_lt RTUNE_UPDATE_REGION_END
+#define DEFAULT_update_policy RTUNE_UPDATE_BATCH_STRAIGHT
+
 /**
  * stvar stands for state trace variable, introduced for a system to keep track of its state change that can be used for other purpose
  * such as analyzing the trend of the change for building models.
@@ -230,67 +281,18 @@ typedef struct rtune_func {
     int update_iteration_stride;    //The number of iterations between each sample
 
     rtune_var_t * active_var; //the variable which is being updated
-    rtune_var_t *input_varcoefs[MAX_NUM_VARS]; /* the input var and coefficient this variable */
+    rtune_var_t *input_vars[MAX_NUM_VARS]; /* the input var and coefficient this variable */
+    utype_t input_coefs[MAX_NUM_VARS];
     int num_vars;
-    int num_coefficients;
-    
-    int *input; //The input of var values represented by the index of the state of each variable. 
+    int num_coefs;
+
+    int *input; //The input of var values represented by the index of the state of each variable.
                 //This is a 2-D array of int [total_num_states][num_vars]
 
+    //Objectives that use this function
     struct rtune_objective *objectives[MAX_NUM_OBJ];
     int num_objs;
 } rtune_func_t;
-
-typedef enum rtune_objective_kind {
-    RTUNE_OBJECTIVE_MIN,
-    RTUNE_OBJECTIVE_MAX,
-    RTUNE_OBJECTIVE_INTERSECTION,
-    RTUNE_OBJECTIVE_SELECT_MIN,
-    RTUNE_OBJECTIVE_SEELCT_MAX,
-    RTUNE_OBJECTIVE_THRESHOLD,
-    RTUNE_OBJECTIVE_THRESHOLD_UP,
-    RTUNE_OBJECTIVE_THRESHOLD_DOWN,
-} rtune_objective_kind_t;
-
-/**
- * var search strategy in order to meet the objective
- */
-typedef enum rtune_objective_search_strategy {
-    /* search strategy */
-    RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_AFTER_COMPLETE,
-    RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_ON_THE_FLY,
-    RTUNE_OBJECTIVE_SEARCH_UNIMODAL_ON_THE_FLY,
-    RTUNE_OBJECTIVE_SEARCH_RANDOM,
-    RTUNE_OBJECTIVE_SEARCH_NELDER_MEAD, //simplex method
-    RTUNE_OBJECTIVE_SEARCH_BINARY_GRADIENT,
-    RTUNE_OBJECTIVE_SEARCH_QUATERNARY_GRADIENT,
-    RTUNE_OBJECTIVE_SEARCH_OCTAL_GRADIENT,
-    RTUNE_OBJECTIVE_SEARCH_HEX_GRADIENT,
-    //The inhouse binary gradient approach: given a known number of sorted inputs (x1,x2,...x0,...,xn) for a variable X,
-    //x0 is the value in the middle, collect f(x1) (or f(xn)) and f(x0), calculate the gradient g(x1->x0) = (f(x0) - f(x1))/(x0 - x1).
-    //For minization, if g(x1->x0) > 0;
-} rtune_objective_search_strategy_t;
-
-#define RTUNE_OBJECTIVE_SEARCH_DEFAULT RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_ON_THE_FLY
-
-// For objectives: 10% deviation tolerance, 2 fidelity window and 4 lookup window
-#define DEFAULT_deviation_tolerance 0.10
-#define DEFAULT_fidelity_window 2
-#define DEFAULT_lookup_window 4
-
-// For variables and functions
-#define DEFAULT_update_iteration_start 0
-#define DEFAULT_batch_size 1
-#define DEFAULT_update_iteration_stride 0
-
-// For variables
-#define DEFAULT_VAR_update_lt RTUNE_UPDATE_REGION_BEGIN
-//#define DEFAULT_VAR_update_policy //kind specific so cannot set one for all kinds
-#define DEFAULT_VAR_apply_policy RTUNE_VAR_APPLY_ON_UPDATE
-
-// For functions
-#define DEFAULT_FUNC_update_lt RTUNE_UPDATE_REGION_END
-#define DEFAULT_update_policy RTUNE_UPDATE_BATCH_STRAIGHT
 
 /**
  * @brief ideally, an objective function include a variable to store the value of the function, multiple variables, and an optional array-based binary expression tree for 
@@ -306,19 +308,18 @@ typedef struct rtune_objective {
     rtune_status_t status;
     //how the configuration that leads to this objective to be met should be applied, apply once or everytime
     rtune_objective_search_strategy_t search_strategy; //when the obj should be evaluated, after the funcs are completed updated or while they are being updated
-    rtune_func_t * inputs[MAX_NUM_VARS];      //The inputs that are used to determine the objectives, typically are either objective function
+    rtune_func_t * input_funcoefs[MAX_NUM_VARS];      //The input that are used to determine the objectives, typically are either objective function
                                               // or constant depending on the objective kind
     int num_vars; //num of independent variables that impact the objective func, thus the objective
     int num_funcs_input;                    //num of models in the input, the rest are constant/coefficient
 
-    utype_t search_cache[MAX_NUM_VARS]; //the search cache is used to store the temp func value that currently meets the objective, but not before all the variables of the
-                                        //obj functions are evaluated. E.g. for min objective, it stores the min of the current objective function before it is fully updated.
-    int search_cache_index[MAX_NUM_VARS];
-
     /** var configuration for this objective. To apply the configuration, the applier of each var is called according to the apply_policy of each var, the value applied is what is indexed in this struct*/
     struct config {
         rtune_var_t * var;
-        int index; //The index for the state value that will be applied to the system/app when the objective that depends on this var is met
+        //the value of the var that is applied, this field is also used as cache to store the temp func value that currently meets the objective, but not before all the variables of the
+        //obj functions are evaluated. E.g. for min objective, it stores the min of the current objective function before it is fully updated.
+        utype_t value; //
+        int index; //The index for the state value of the var that will be applied to the system/app when the objective that depends on this var is met
         int preference_right; //preference of the value of the var for this objective depending on the list of values of this var, e.g. if the list values is sorted min-max, preference_right true
                               //means that for the similar value of the obj function for this objective, a value toward greater (max) should be used
         int last_iteration_applied; //the last iteration this config is applied

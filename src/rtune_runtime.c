@@ -323,7 +323,7 @@ int rtune_func_schedule_check(rtune_func_t * func) {
     int last_var_end = -1;
     int safe_schedule = 0;
     for (i=0; i<func->num_vars; i++) {
-        rtune_var_t * var = func->input_varcoefs[i];
+        rtune_var_t * var = func->input_vars[i];
         int start = var->update_iteration_start;
         if (start < last_var_end) { //overlapping schedule
             printf("The update schedule of var[%d] (%s, %p) overlap with the last var[%d]\n", i, var->stvar.name, var, i-1);
@@ -352,7 +352,7 @@ int rtune_func_schedule_check(rtune_func_t * func) {
  * @return void* the pointer to the rtune_func_t type
  */
 void *rtune_func_add(rtune_region_t *region, rtune_kind_t kind, char *name, rtune_data_type_t type,
-                     int num_vars, int num_coefficients, ...) {
+                     int num_vars, int num_coefs, ...) {
     int index = region->num_funcs;
     rtune_func_t *func = &region->funcs[index];
 
@@ -361,7 +361,7 @@ void *rtune_func_add(rtune_region_t *region, rtune_kind_t kind, char *name, rtun
     stvar->type = type;
     func->kind = kind;
     func->num_vars = num_vars;
-    func->num_coefficients = num_coefficients;
+    func->num_coefs = num_coefs;
 
     //set the default update time/policy/iteration_start/batch/stride
     func->update_lt = DEFAULT_FUNC_update_lt;
@@ -372,16 +372,16 @@ void *rtune_func_add(rtune_region_t *region, rtune_kind_t kind, char *name, rtun
 
     int i;
     va_list args;
-    va_start(args, num_coefficients);
+    va_start(args, num_coefs);
     int total_num_states = 1;
     for (i = 0; i < num_vars; i++) {
         rtune_var_t *var = va_arg(args, rtune_var_t *);
         var->usedByFuncs[var->num_uses++] = func; //set the var dependency link
         total_num_states *= var->stvar.total_num_states; //The number of states of the func is the products of the states of all input vars
-        func->input_varcoefs[i] = var;
+        func->input_vars[i] = var;
     }
-    for (; i < num_vars + num_coefficients; i++) {
-        func->input_varcoefs[i] = va_arg(args, void *);
+    for (i=0; i < num_coefs; i++) {
+        func->input_coefs[i] = (utype_t) va_arg(args, utype_t);
     }
     va_end(args);
     stvar->total_num_states = total_num_states;
@@ -419,7 +419,7 @@ rtune_func_t* rtune_func_add_model(rtune_region_t * region, rtune_kind_t kind, c
     stvar->provider = provider;
     stvar->provider_arg = provider_arg;
     func->num_vars = num_vars;
-    func->num_coefficients = -1;
+    func->num_coefs = 0;
 
     //set the default update time/policy/iteration_start/batch/stride
     func->update_lt = DEFAULT_FUNC_update_lt;
@@ -436,7 +436,7 @@ rtune_func_t* rtune_func_add_model(rtune_region_t * region, rtune_kind_t kind, c
         rtune_var_t *var = va_arg(args, rtune_var_t *);
         var->usedByFuncs[var->num_uses++] = func; //set the var dependency link
         total_num_states *= var->stvar.total_num_states; //The number of states of the func is the products of the states of all input vars
-        func->input_varcoefs[i] = var;
+        func->input_vars[i] = var;
     }
     va_end(args);
     stvar->total_num_states = total_num_states;
@@ -519,10 +519,10 @@ rtune_objective_t *rtune_objective_add_min(rtune_region_t *region, char *name, r
     func->objectives[func->num_objs++] = obj;
 
     obj->num_funcs_input = 1;
-    obj->inputs[0] = func;
+    obj->input_funcoefs[0] = func;
 
     obj->kind = RTUNE_OBJECTIVE_MIN;
-    set_max(&obj->search_cache[0], func->stvar.type); obj->search_cache_index[0] = -1;
+    set_max(&(obj->config[0].value), func->stvar.type); obj->config[0].index = -1;
     return obj;
 }
 
@@ -540,10 +540,10 @@ rtune_objective_t *rtune_objective_add_max(rtune_region_t *region, char *name, r
     func->objectives[func->num_objs++] = obj;
 
     obj->num_funcs_input = 1;
-    obj->inputs[0] = func;
+    obj->input_funcoefs[0] = func;
 
     obj->kind = RTUNE_OBJECTIVE_MAX;
-    set_min(&obj->search_cache[0], func->stvar.type); obj->search_cache_index[0] = -1;
+    set_min(&(obj->config[0].value), func->stvar.type); obj->config[0].index = -1;
     return obj;
 }
 
@@ -562,8 +562,8 @@ rtune_objective_t *rtune_objective_add_intersection(rtune_region_t *region, char
     model2->objectives[model2->num_objs++] = obj;
 
     obj->num_funcs_input = 2;
-    obj->inputs[0] = model1;
-    obj->inputs[1] = model2;
+    obj->input_funcoefs[0] = model1;
+    obj->input_funcoefs[1] = model2;
 
     obj->kind = RTUNE_OBJECTIVE_INTERSECTION;
     return obj;
@@ -588,11 +588,11 @@ rtune_objective_t *rtune_objective_add_select2(rtune_region_t *region, char *nam
     model2->objectives[model2->num_objs++] = obj;
 
     obj->num_funcs_input = 2;
-    obj->inputs[0] = model1;
-    obj->inputs[1] = model2;
-    //obj->inputs[2] = select_kind;
-    //obj->inputs[3] = model1_select;
-    //obj->inputs[4] = model2_select;
+    obj->input_funcoefs[0] = model1;
+    obj->input_funcoefs[1] = model2;
+    //obj->input_funcoefs[2] = select_kind;
+    //obj->input_funcoefs[3] = model1_select;
+    //obj->input_funcoefs[4] = model2_select;
 
     obj->kind = select_kind;
     return obj;
@@ -619,9 +619,9 @@ rtune_objective_t *rtune_objective_add_select(rtune_region_t *region, char *name
     }
 
     obj->num_funcs_input = num_models;
-    //obj->inputs[0] = models;
-    //obj->inputs[1] = select;
-    //obj->inputs[2] = model_select; //a mask to show which model is selected
+    //obj->input_funcoefs[0] = models;
+    //obj->input_funcoefs[1] = select;
+    //obj->input_funcoefs[2] = model_select; //a mask to show which model is selected
 
     obj->kind = select_kind;
     return obj;
@@ -645,8 +645,8 @@ rtune_objective_t *rtune_objective_add_threshold(rtune_region_t *region, char *n
     model->objectives[model->num_objs++] = obj;
 
     obj->num_funcs_input = 1;
-    obj->inputs[0] = model;
-    obj->inputs[1] = threshold;
+    obj->input_funcoefs[0] = model;
+    obj->input_funcoefs[1] = threshold;
 
     obj->kind = threshold_kind;
     return obj;
@@ -667,8 +667,8 @@ rtune_objective_t *rtune_objective_add_threshold_down(rtune_region_t *region, ch
     model->objectives[model->num_objs++] = obj;
 
     obj->num_funcs_input = 1;
-    obj->inputs[0] = model;
-    obj->inputs[1] = threshold;
+    obj->input_funcoefs[0] = model;
+    obj->input_funcoefs[1] = threshold;
 
     obj->kind = RTUNE_OBJECTIVE_THRESHOLD_DOWN;
     return obj;
@@ -733,25 +733,35 @@ void rtune_objective_add_callback(rtune_objective_t * obj, void (*callback) (voi
         STVAR_UPDATE_NEXT_STATE(TYPE, stvar);          \
     }
 
-inline static void rtune_stvar_apply(stvar_t * stvar, int index) {
-    if (!stvar->applier) return;
-    void * state;
-    switch (stvar->type) {
-        case RTUNE_short:
-            state = (void*)(unsigned long) ((short *)stvar->states)[index]; break;
-        case RTUNE_int:
-            state = (void*)(unsigned long) ((int *)stvar->states)[index]; break;
-        case RTUNE_long:
-            state = (void*)(unsigned long) ((long *)stvar->states)[index]; break;
-        case RTUNE_float:
-            state = (void*)(unsigned long) ((float *)stvar->states)[index]; break;
-        case RTUNE_double:
-            state = (void*)(unsigned long) ((double *)stvar->states)[index]; break;
-        default:
-            //error
-            break;
-    }
-    stvar->applier(state);
+inline static utype_t rtune_stvar_get_value(stvar_t *stvar, int index) {
+	utype_t v;
+	switch (stvar->type) {
+	case RTUNE_short:
+		v._short_value = ((short*) stvar->states)[index];
+		break;
+	case RTUNE_int:
+		v._int_value = ((int*) stvar->states)[index];
+		break;
+	case RTUNE_long:
+		v._long_value = ((long*) stvar->states)[index];
+		break;
+	case RTUNE_float:
+		v._float_value = ((float*) stvar->states)[index];
+		break;
+	case RTUNE_double:
+		v._double_value = ((double*) stvar->states)[index];
+		break;
+	default:
+		v._typed_value = ((void**) stvar->states)[index];
+		break;
+	}
+	return v;
+}
+
+inline static utype_t rtune_stvar_apply(stvar_t * stvar, int index) {
+	utype_t v = rtune_stvar_get_value(stvar, index);
+    if (stvar->applier) stvar->applier(v._typed_value);
+    return v;
 }
 /**
  * update the list or range variable
@@ -1057,9 +1067,9 @@ static void rtune_func_print_doubleFunc_shortVar(rtune_func_t * func, int count)
     stvar_t *stvar = &func->stvar;
     int num_states = stvar->num_states;
     printf("=============== values for func %s at iteration: %d ====================\n", stvar->name, count);
-    printf("\t\t\t\t");
+    printf("\t\t");
     for (i=0; i<num_states; i++) {
-        printf("%d\t\t", i);
+        printf("%d\t", i);
     }
     printf("\n");
 
@@ -1072,11 +1082,11 @@ static void rtune_func_print_doubleFunc_shortVar(rtune_func_t * func, int count)
 
     int j;
     for (j=0; j<func->num_vars; j++) {
-        rtune_var_t * var = func->input_varcoefs[j];
+        rtune_var_t * var = func->input_vars[j];
         printf("var %s: ", var->stvar.name);
         for (i=0; i<num_states; i++) {
             int vi = func->input[i*func->num_vars + j];
-            printf("%d\t\t", ((short*)var->stvar.states)[vi]);
+            printf("%d\t", ((short*)var->stvar.states)[vi]);
         }
         printf("\n");
     }
@@ -1090,12 +1100,12 @@ static void rtune_func_print_doubleFunc_shortVar(rtune_func_t * func, int count)
  *         return a value that representing the direction of searching (increment or decrement).
  */
 static int rtune_objective_min_unimodal_gradient_1var(rtune_objective_t *obj) {
-    rtune_func_t *func = obj->inputs[0];
+    rtune_func_t *func = obj->input_funcoefs[0];
     stvar_t *func_stvar = &func->stvar;
 
     rtune_var_t *avar = func->active_var;
     stvar_t *avar_stvar = &avar->stvar;
-    rtune_var_t *var = func->input_varcoefs[0]; //this should be the active avar
+    rtune_var_t *var = func->input_vars[0]; //this should be the active avar
 
     //assert func_stvar->num_states == var_stvar->num_states;
     int num_states = func_stvar->num_states;
@@ -1154,7 +1164,7 @@ static int rtune_objective_min_unimodal_gradient_1var(rtune_objective_t *obj) {
 
 
 static int rtune_objective_evaluate_min_exhaustive_after_complete(rtune_objective_t * obj) {
-    rtune_func_t * func = obj->inputs[0];
+    rtune_func_t * func = obj->input_funcoefs[0];
     stvar_t * stvar = &func->stvar;
     int min_index = 0;
     if (stvar->type == RTUNE_short) {
@@ -1180,20 +1190,20 @@ static int rtune_objective_evaluate_min_exhaustive_after_complete(rtune_objectiv
     }
 
 static int rtune_objective_evaluate_min_exhaustive_on_the_fly(rtune_objective_t * obj) {
-    rtune_func_t * func = obj->inputs[0];
+    rtune_func_t * func = obj->input_funcoefs[0];
     stvar_t * stvar = &func->stvar;
     int min_index = -1;
-    utype_t * search_cache = &obj->search_cache[0];
+    utype_t * cache = &(obj->config[0].value);
     if (stvar->type == RTUNE_short) {
-        STVAR_FIND_MIN_EXHAUSTIVE_ON_THE_FLY(short, stvar, min_index, search_cache);
+        STVAR_FIND_MIN_EXHAUSTIVE_ON_THE_FLY(short, stvar, min_index, cache);
     } else if (stvar->type == RTUNE_int) {
-        STVAR_FIND_MIN_EXHAUSTIVE_ON_THE_FLY(int, stvar, min_index, search_cache);
+        STVAR_FIND_MIN_EXHAUSTIVE_ON_THE_FLY(int, stvar, min_index, cache);
     } else if (stvar->type == RTUNE_long) {
-        STVAR_FIND_MIN_EXHAUSTIVE_ON_THE_FLY(long, stvar, min_index, search_cache);
+        STVAR_FIND_MIN_EXHAUSTIVE_ON_THE_FLY(long, stvar, min_index, cache);
     } else if (stvar->type == RTUNE_float) {
-        STVAR_FIND_MIN_EXHAUSTIVE_ON_THE_FLY(float, stvar, min_index, search_cache);
+        STVAR_FIND_MIN_EXHAUSTIVE_ON_THE_FLY(float, stvar, min_index, cache);
     } else if (stvar->type == RTUNE_double) {
-        STVAR_FIND_MIN_EXHAUSTIVE_ON_THE_FLY(double, stvar, min_index, search_cache);
+        STVAR_FIND_MIN_EXHAUSTIVE_ON_THE_FLY(double, stvar, min_index, cache);
     } else min_index = -1;
     return min_index;
 }
@@ -1208,12 +1218,12 @@ static int rtune_objective_evaluate_min_exhaustive_on_the_fly(rtune_objective_t 
  *         return a value that representing the direction of searching (increment or decrement).
  */
 static int rtune_objective_max_unimodal_gradient_1var(rtune_objective_t *obj) {
-    rtune_func_t *func = obj->inputs[0];
+    rtune_func_t *func = obj->input_funcoefs[0];
     stvar_t *func_stvar = &func->stvar;
 
     rtune_var_t *avar = func->active_var;
     stvar_t *avar_stvar = &avar->stvar;
-    rtune_var_t *var = func->input_varcoefs[0]; //this should be the active avar
+    rtune_var_t *var = func->input_vars[0]; //this should be the active avar
 
     //assert func_stvar->num_states == var_stvar->num_states;
     int num_states = func_stvar->num_states;
@@ -1271,7 +1281,7 @@ static int rtune_objective_max_unimodal_gradient_1var(rtune_objective_t *obj) {
     }
 
 static int rtune_objective_evaluate_max_after_complete(rtune_objective_t * obj) {
-    rtune_func_t * func = obj->inputs[0];
+    rtune_func_t * func = obj->input_funcoefs[0];
     stvar_t * stvar = &func->stvar;
     int max_index = 0;
     if (stvar->type == RTUNE_short) {
@@ -1298,20 +1308,20 @@ static int rtune_objective_evaluate_max_after_complete(rtune_objective_t * obj) 
     }
 
 static int rtune_objective_evaluate_max_exhaustive_on_the_fly(rtune_objective_t * obj) {
-    rtune_func_t * func = obj->inputs[0];
+    rtune_func_t * func = obj->input_funcoefs[0];
     stvar_t * stvar = &func->stvar;
     int max_index = -1;
-    utype_t * search_cache = &obj->search_cache[0];
+    utype_t * cache = &(obj->config[0].value);
     if (stvar->type == RTUNE_short) {
-        STVAR_FIND_MAX_EXHAUSTIVE_ON_THE_FLY(short, stvar, max_index, search_cache);
+        STVAR_FIND_MAX_EXHAUSTIVE_ON_THE_FLY(short, stvar, max_index, cache);
     } else if (stvar->type == RTUNE_int) {
-        STVAR_FIND_MAX_EXHAUSTIVE_ON_THE_FLY(int, stvar, max_index, search_cache);
+        STVAR_FIND_MAX_EXHAUSTIVE_ON_THE_FLY(int, stvar, max_index, cache);
     } else if (stvar->type == RTUNE_long) {
-        STVAR_FIND_MAX_EXHAUSTIVE_ON_THE_FLY(long, stvar, max_index, search_cache);
+        STVAR_FIND_MAX_EXHAUSTIVE_ON_THE_FLY(long, stvar, max_index, cache);
     } else if (stvar->type == RTUNE_float) {
-        STVAR_FIND_MAX_EXHAUSTIVE_ON_THE_FLY(float, stvar, max_index, search_cache);
+        STVAR_FIND_MAX_EXHAUSTIVE_ON_THE_FLY(float, stvar, max_index, cache);
     } else if (stvar->type == RTUNE_double) {
-        STVAR_FIND_MAX_EXHAUSTIVE_ON_THE_FLY(double, stvar, max_index, search_cache);
+        STVAR_FIND_MAX_EXHAUSTIVE_ON_THE_FLY(double, stvar, max_index, cache);
     } else max_index = -1;
     return max_index;
 }
@@ -1326,10 +1336,10 @@ static int rtune_objective_collect_vars(rtune_objective_t * obj) {
     int usage_count[MAX_NUM_VARS] = {0};
     int num_vars = 0;
     for (i=0; i<obj->num_funcs_input; i++) {
-        rtune_func_t *func = obj->inputs[i];
+        rtune_func_t *func = obj->input_funcoefs[i];
         int j;
         for (j=0; j<func->num_vars; j++) {
-            rtune_var_t * var = func->input_varcoefs[j];
+            rtune_var_t * var = func->input_vars[j];
             int k=0;
             while(k<num_vars && var != obj->config[k].var) k++;
             if (k<num_vars) {
@@ -1350,10 +1360,10 @@ static int rtune_objective_collect_vars(rtune_objective_t * obj) {
     return num_vars;
 }
 
-static void rtune_var_apply(rtune_var_t * var, int index, int iteration) {
-    rtune_stvar_apply(&var->stvar, index);
+static utype_t rtune_var_apply(rtune_var_t * var, int index, int iteration) {
     var->current_apply_index = index;
     var->last_apply_iteration = iteration;
+    return rtune_stvar_apply(&var->stvar, index);
 }
 
 void rtune_region_begin(rtune_region_t * region) {
@@ -1494,7 +1504,7 @@ void rtune_region_begin(rtune_region_t * region) {
             } else { //not active anymore, check and find the next active var
                 check_for_active_var:;
                 for (j=0; j<func->num_vars; j++) {
-                    rtune_var_t * tmp = func->input_varcoefs[j];
+                    rtune_var_t * tmp = func->input_vars[j];
                     if (tmp->status == RTUNE_STATUS_SAMPLING || tmp->status == RTUNE_STATUS_UPDATE_COMPLETE) {
                         func->active_var = tmp;
                         avar = tmp;
@@ -1504,7 +1514,6 @@ void rtune_region_begin(rtune_region_t * region) {
                 if (avar == NULL) { func->active_var = NULL; }
             }
         }
-
         if (func->update_lt == RTUNE_DEFAULT_NONE && avar != NULL)
             update_lt = avar->update_lt;
         else update_lt = func->update_lt;
@@ -1555,13 +1564,13 @@ void rtune_region_begin(rtune_region_t * region) {
                 break;
         }
 
-        if (index >= 0) {//update the inputs of this new func value
+        if (index >= 0) {//update the input of this new func value
             int k;
-            int * inputs = &func->input[index*func->num_vars]; //input is a 2-D array of int [total_num_states][num_vars]
+            int * input = &func->input[index*func->num_vars]; //input is a 2-D array of int [total_num_states][num_vars]
             for (k=0; k<func->num_vars; k++) {
                 //The input of the func from the var is always the last state of the var as it is latest update since
                 //the var of a func is only updated one a time (by restricting their schedule to not overlap)
-                inputs[k] = func->input_varcoefs[k]->stvar.num_states - 1;
+                input[k] = func->input_vars[k]->stvar.num_states - 1;
             }
         }
 
@@ -1609,7 +1618,7 @@ void rtune_region_end(rtune_region_t * region) {
                 check_for_active_var:;
                 int j;
                 for (j = 0; j < func->num_vars; j++) {
-                    rtune_var_t *tmp = func->input_varcoefs[j];
+                    rtune_var_t *tmp = func->input_vars[j];
                     if (tmp->status == RTUNE_STATUS_SAMPLING || tmp->status == RTUNE_STATUS_UPDATE_COMPLETE) {
                         func->active_var = tmp;
                         avar = tmp;
@@ -1669,13 +1678,13 @@ void rtune_region_end(rtune_region_t * region) {
                 break;
         }
 
-        if (index >= 0) {//update the inputs of this new func value
-            int *inputs = &func->input[index * func->num_vars]; //input is a 2-D array of int [total_num_states][num_vars]
+        if (index >= 0) {//update the input of this new func value
+            int *input = &func->input[index * func->num_vars]; //input is a 2-D array of int [total_num_states][num_vars]
             int j;
             for (j = 0; j < func->num_vars; j++) {
                 //The input of the func from the var is always the last state of the var as it is latest update since
                 //the var of a func is only updated one a time (by restricting their schedule to not overlap)
-                inputs[j] = func->input_varcoefs[j]->stvar.num_states - 1;
+                input[j] = func->input_vars[j]->stvar.num_states - 1;
             }
 
             if (stvar->total_num_states == stvar->num_states &&
@@ -1689,7 +1698,13 @@ void rtune_region_end(rtune_region_t * region) {
             //mark those that need to be evaluated and it will then be evaluated after all the func are processed
             for (j = 0; j < func->num_objs; j++) {
                 rtune_objective_t *obj = func->objectives[j];
-                if (obj->status == RTUNE_STATUS_CREATED || obj->status == RTUNE_STATUS_OBJECTIVE_EVALUATING) {
+                if (obj->status == RTUNE_STATUS_CREATED) {
+            		if (func->status == RTUNE_STATUS_UPDATE_COMPLETE && obj->search_strategy == RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_AFTER_COMPLETE) {
+            			obj->status = RTUNE_STATUS_OBJECTIVE_TO_BE_EVALUATED;
+            		}
+                }
+
+                if (obj->status == RTUNE_STATUS_OBJECTIVE_EVALUATING) { //evaluated last time
                     obj->status = RTUNE_STATUS_OBJECTIVE_TO_BE_EVALUATED;
                 }
             }
@@ -1708,13 +1723,13 @@ void rtune_region_end(rtune_region_t * region) {
             case RTUNE_OBJECTIVE_MIN: {
                 //printf("Evaluating min threshold ...: ");
                 //int index = rtune_objective_evaluate_min(obj);
-                //int var_index = obj->inputs[0]->input[index];
+                //int var_index = obj->input_funcoefs[0]->input[index];
                 //if (index >= 0)
                 //    printf("min objective is met: index: %d, var: %d, func: %.2f\n", index,
-                //           ((short *) (obj->inputs[0]->input_varcoefs[0]->stvar.states))[var_index],
-                //           ((double *) (obj->inputs[0]->stvar.states))[index]);
+                //           ((short *) (obj->input_funcoefs[0]->input_vars[0]->stvar.states))[var_index],
+                //           ((double *) (obj->input_funcoefs[0]->stvar.states))[index]);
 
-                rtune_func_t *func = obj->inputs[0];
+                rtune_func_t *func = obj->input_funcoefs[0];
                 int index = -1;
                 int var_index = -1;
 
@@ -1725,10 +1740,10 @@ void rtune_region_end(rtune_region_t * region) {
                     rtune_func_print_doubleFunc_shortVar(func, count);
                     index = rtune_objective_min_unimodal_gradient_1var(obj);
                     if (index >= 0) {
-                        var_index = obj->inputs[0]->input[index];
+                        var_index = obj->input_funcoefs[0]->input[index];
                         printf("min objective is met: index: %d, var: %d, func: %.2f\n", index,
-                               ((short *) (obj->inputs[0]->input_varcoefs[0]->stvar.states))[var_index],
-                               ((double *) (obj->inputs[0]->stvar.states))[index]);
+                               ((short *) (obj->input_funcoefs[0]->input_vars[0]->stvar.states))[var_index],
+                               ((double *) (obj->input_funcoefs[0]->stvar.states))[index]);
                         obj->status = RTUNE_STATUS_OBJECTIVE_MET;
                     }
                     printf("######################################################################################################\n\n");
@@ -1737,29 +1752,36 @@ void rtune_region_end(rtune_region_t * region) {
                     printf("Evaluating min objective with exhaustive search after sampling complete ...: ");
                     index = rtune_objective_evaluate_min_exhaustive_after_complete(obj);
                     obj->status = RTUNE_STATUS_OBJECTIVE_MET;
-                    var_index = obj->inputs[0]->input[index];
+                    var_index = obj->input_funcoefs[0]->input[index];
                     if (index >= 0)
                         printf("min objective is met: index: %d, var: %d, func: %.2f\n", index,
-                               ((short *) (obj->inputs[0]->input_varcoefs[0]->stvar.states))[var_index],
-                               ((double *) (obj->inputs[0]->stvar.states))[index]);
+                               ((short *) (obj->input_funcoefs[0]->input_vars[0]->stvar.states))[var_index],
+                               ((double *) (obj->input_funcoefs[0]->stvar.states))[index]);
                     printf("\n");
                 } else if (obj->search_strategy == RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_ON_THE_FLY) {
                     printf("Evaluating min objective with exhaustive search on the fly ...: ");
                     index = rtune_objective_evaluate_min_exhaustive_on_the_fly(obj);
-                    var_index = obj->inputs[0]->input[index];
+                    var_index = obj->input_funcoefs[0]->input[index];
                     if (index >= 0)
                         printf("min objective is met: index: %d, var: %d, func: %.2f\n", index,
-                               ((short *) (obj->inputs[0]->input_varcoefs[0]->stvar.states))[var_index],
-                               ((double *) (obj->inputs[0]->stvar.states))[index]);
+                               ((short *) (obj->input_funcoefs[0]->input_vars[0]->stvar.states))[var_index],
+                               ((double *) (obj->input_funcoefs[0]->stvar.states))[index]);
                     printf("\n");
                     if (func->status == RTUNE_STATUS_UPDATE_COMPLETE)
                         obj->status = RTUNE_STATUS_OBJECTIVE_MET;
+                } else {
+                	//unsupported min search strategy
+                	printf("unsupported min search strategy\n");
                 }
 
                 if (obj->status == RTUNE_STATUS_OBJECTIVE_MET && var_index > 0) {
                 	//apply the variable configuration for the objective that is just met
-                	rtune_var_t * var = obj->inputs[0]->input_varcoefs[0];
-                	rtune_stvar_apply(&var->stvar, var_index);
+                	rtune_var_t * var = obj->input_funcoefs[0]->input_vars[0];
+                	obj->config[0].value = rtune_var_apply(var, var_index, count);
+                	obj->config[0].var = var;
+                	obj->config[0].index = var_index;
+                	obj->config[0].preference_right = 1;
+                	obj->config[0].last_iteration_applied = count;
 
                 	//call the callback of the objective
                 	if (obj->callback != NULL) obj->callback(obj->callback_arg);
@@ -1768,7 +1790,7 @@ void rtune_region_end(rtune_region_t * region) {
             }
             case RTUNE_OBJECTIVE_MAX: {
                 //This is the same implementation as MIN objective except the relationship is max
-                rtune_func_t *func = obj->inputs[0];
+                rtune_func_t *func = obj->input_funcoefs[0];
                 int index = -1;
                 int var_index = -1;
 
@@ -1779,10 +1801,10 @@ void rtune_region_end(rtune_region_t * region) {
                     rtune_func_print_doubleFunc_shortVar(func, count);
                     index = rtune_objective_max_unimodal_gradient_1var(obj);
                     if (index >= 0) {
-                        var_index = obj->inputs[0]->input[index];
+                        var_index = obj->input_funcoefs[0]->input[index];
                         printf("max objective is met: index: %d, var: %d, func: %.2f\n", index,
-                               ((short *) (obj->inputs[0]->input_varcoefs[0]->stvar.states))[var_index],
-                               ((double *) (obj->inputs[0]->stvar.states))[index]);
+                               ((short *) (obj->input_funcoefs[0]->input_vars[0]->stvar.states))[var_index],
+                               ((double *) (obj->input_funcoefs[0]->stvar.states))[index]);
                         obj->status = RTUNE_STATUS_OBJECTIVE_MET;
                     }
                     printf("######################################################################################################\n\n");
@@ -1791,26 +1813,36 @@ void rtune_region_end(rtune_region_t * region) {
                     printf("Evaluating max objective with exhaustive search after sampling complete ...: ");
                     index = rtune_objective_evaluate_min_exhaustive_after_complete(obj);
                     obj->status = RTUNE_STATUS_OBJECTIVE_MET;
-                    var_index = obj->inputs[0]->input[index];
+                    var_index = obj->input_funcoefs[0]->input[index];
                     if (index >= 0)
                         printf("max objective is met: index: %d, var: %d, func: %.2f\n", index,
-                               ((short *) (obj->inputs[0]->input_varcoefs[0]->stvar.states))[var_index],
-                               ((double *) (obj->inputs[0]->stvar.states))[index]);
+                               ((short *) (obj->input_funcoefs[0]->input_vars[0]->stvar.states))[var_index],
+                               ((double *) (obj->input_funcoefs[0]->stvar.states))[index]);
                     printf("\n");
                 } else if (obj->search_strategy == RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_ON_THE_FLY) {
                     printf("Evaluating max objective with exhaustive on the fly ...: ");
                     index = rtune_objective_evaluate_min_exhaustive_on_the_fly(obj);
-                    var_index = obj->inputs[0]->input[index];
+                    var_index = obj->input_funcoefs[0]->input[index];
                     if (index >= 0)
                         printf("max objective is met: index: %d, var: %d, func: %.2f\n", index,
-                               ((short *) (obj->inputs[0]->input_varcoefs[0]->stvar.states))[var_index],
-                               ((double *) (obj->inputs[0]->stvar.states))[index]);
+                               ((short *) (obj->input_funcoefs[0]->input_vars[0]->stvar.states))[var_index],
+                               ((double *) (obj->input_funcoefs[0]->stvar.states))[index]);
                     printf("\n");
                     if (func->status == RTUNE_STATUS_UPDATE_COMPLETE)
                         obj->status = RTUNE_STATUS_OBJECTIVE_MET;
                 }
 
                 if (obj->status == RTUNE_STATUS_OBJECTIVE_MET && var_index > 0) {
+                	//apply the variable configuration for the objective that is just met
+                	rtune_var_t * var = obj->input_funcoefs[0]->input_vars[0];
+                	obj->config[0].value = rtune_var_apply(var, var_index, count);
+                	obj->config[0].var = var;
+                	obj->config[0].index = var_index;
+                	obj->config[0].preference_right = 1;
+                	obj->config[0].last_iteration_applied = count;
+
+                	//call the callback of the objective
+                	if (obj->callback != NULL) obj->callback(obj->callback_arg);
                 }
                 break;
             }
