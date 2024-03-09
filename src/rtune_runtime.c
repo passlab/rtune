@@ -518,8 +518,8 @@ rtune_objective_t *rtune_objective_add_min(rtune_region_t *region, char *name, r
 
     func->objectives[func->num_objs++] = obj;
 
-    obj->num_funcs_input = 1;
-    obj->input_funcoefs[0] = func;
+    obj->num_funcs = 1;
+    obj->input_funcs[0].func = func;
 
     obj->kind = RTUNE_OBJECTIVE_MIN;
     set_max(&(obj->config[0].value), func->stvar.type); obj->config[0].index = -1;
@@ -539,8 +539,8 @@ rtune_objective_t *rtune_objective_add_max(rtune_region_t *region, char *name, r
 
     func->objectives[func->num_objs++] = obj;
 
-    obj->num_funcs_input = 1;
-    obj->input_funcoefs[0] = func;
+    obj->num_funcs = 1;
+    obj->input_funs[0].func = func;
 
     obj->kind = RTUNE_OBJECTIVE_MAX;
     set_min(&(obj->config[0].value), func->stvar.type); obj->config[0].index = -1;
@@ -561,9 +561,9 @@ rtune_objective_t *rtune_objective_add_intersection(rtune_region_t *region, char
     model1->objectives[model1->num_objs++] = obj;
     model2->objectives[model2->num_objs++] = obj;
 
-    obj->num_funcs_input = 2;
-    obj->input_funcoefs[0] = model1;
-    obj->input_funcoefs[1] = model2;
+    obj->num_funcs = 2;
+    obj->input_funs[0].func = model1;
+    obj->input_funs[0].func = model2;
 
     obj->kind = RTUNE_OBJECTIVE_INTERSECTION;
     return obj;
@@ -587,9 +587,9 @@ rtune_objective_t *rtune_objective_add_select2(rtune_region_t *region, char *nam
     model1->objectives[model1->num_objs++] = obj;
     model2->objectives[model2->num_objs++] = obj;
 
-    obj->num_funcs_input = 2;
-    obj->input_funcoefs[0] = model1;
-    obj->input_funcoefs[1] = model2;
+    obj->num_funcs = 2;
+    obj->input_funs[0].func = model1;
+    obj->input_funs[1].func = model2;
     //obj->input_funcoefs[2] = select_kind;
     //obj->input_funcoefs[3] = model1_select;
     //obj->input_funcoefs[4] = model2_select;
@@ -618,7 +618,9 @@ rtune_objective_t *rtune_objective_add_select(rtune_region_t *region, char *name
         tmp->objectives[tmp->num_objs++] = obj;
     }
 
-    obj->num_funcs_input = num_models;
+    obj->num_funcs = num_models;
+
+    //TODO:
     //obj->input_funcoefs[0] = models;
     //obj->input_funcoefs[1] = select;
     //obj->input_funcoefs[2] = model_select; //a mask to show which model is selected
@@ -644,9 +646,10 @@ rtune_objective_t *rtune_objective_add_threshold(rtune_region_t *region, char *n
 
     model->objectives[model->num_objs++] = obj;
 
-    obj->num_funcs_input = 1;
-    obj->input_funcoefs[0] = model;
-    obj->input_funcoefs[1] = threshold;
+    obj->num_funcs = 1;
+    obj->input_funs[0].func = model;
+    obj->num_coefs = 1;
+    obj->input_coefs[0].coef = threshold;
 
     obj->kind = threshold_kind;
     return obj;
@@ -666,9 +669,10 @@ rtune_objective_t *rtune_objective_add_threshold_down(rtune_region_t *region, ch
 
     model->objectives[model->num_objs++] = obj;
 
-    obj->num_funcs_input = 1;
-    obj->input_funcoefs[0] = model;
-    obj->input_funcoefs[1] = threshold;
+    obj->num_funcs = 1;
+    obj->input_funs[0].func = model;
+    obj->num_coefs = 1;
+    obj->input_coefs[0].coef = threshold;
 
     obj->kind = RTUNE_OBJECTIVE_THRESHOLD_DOWN;
     return obj;
@@ -1335,7 +1339,7 @@ static int rtune_objective_collect_vars(rtune_objective_t * obj) {
     int i;
     int usage_count[MAX_NUM_VARS] = {0};
     int num_vars = 0;
-    for (i=0; i<obj->num_funcs_input; i++) {
+    for (i=0; i<obj->num_funcs; i++) {
         rtune_func_t *func = obj->input_funcoefs[i];
         int j;
         for (j=0; j<func->num_vars; j++) {
@@ -1698,19 +1702,23 @@ void rtune_region_end(rtune_region_t * region) {
             //mark those that need to be evaluated and it will then be evaluated after all the func are processed
             for (j = 0; j < func->num_objs; j++) {
                 rtune_objective_t *obj = func->objectives[j];
-                if (obj->status == RTUNE_STATUS_CREATED) {
-            		if (func->status == RTUNE_STATUS_UPDATE_COMPLETE && obj->search_strategy == RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_AFTER_COMPLETE) {
-            			obj->status = RTUNE_STATUS_OBJECTIVE_TO_BE_EVALUATED;
-            		}
-                }
-
                 if (obj->status == RTUNE_STATUS_OBJECTIVE_EVALUATING) { //evaluated last time
                     obj->status = RTUNE_STATUS_OBJECTIVE_TO_BE_EVALUATED;
+                    continue;
+                }
+                if (obj->status == RTUNE_STATUS_CREATED) {
+            		if (obj->search_strategy == RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_AFTER_COMPLETE) {
+            			if (func->status == RTUNE_STATUS_UPDATE_COMPLETE ) { //TBD: This is only checking one function, we actually need to check all the funcs
+            				obj->status = RTUNE_STATUS_OBJECTIVE_TO_BE_EVALUATED;
+            				continue;
+            			}
+            		} else {
+            			obj->status = RTUNE_STATUS_OBJECTIVE_TO_BE_EVALUATED;
+            		}
                 }
             }
         }
     }
-
 
     //check objective to see whether anyone is met. An objective is only check when its objective func is complete,
     //which is complete only if the variable have all the values for the func

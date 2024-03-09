@@ -306,15 +306,15 @@ typedef struct rtune_objective {
     char * name; //a meaningful name
     rtune_objective_kind_t kind;
     rtune_status_t status;
-    //how the configuration that leads to this objective to be met should be applied, apply once or everytime
+    void (*callback) (void *);             //callback when the objective is met, or when the objective is used,
+    void *callback_arg;
     rtune_objective_search_strategy_t search_strategy; //when the obj should be evaluated, after the funcs are completed updated or while they are being updated
-    rtune_func_t * input_funcoefs[MAX_NUM_VARS];      //The input that are used to determine the objectives, typically are either objective function
-                                              // or constant depending on the objective kind
-    int num_vars; //num of independent variables that impact the objective func, thus the objective
-    int num_funcs_input;                    //num of models in the input, the rest are constant/coefficient
+    float deviation_tolerance; /* absolute deviation tolerance */
+    int fidelity_window; /* consequent number of occurance of meeting the objective goal to accept that the objective is met */
+    int lookup_window; //how many states to check around the posibble state that meets the objective */
 
     /** var configuration for this objective. To apply the configuration, the applier of each var is called according to the apply_policy of each var, the value applied is what is indexed in this struct*/
-    struct config {
+    struct var_config {
         rtune_var_t * var;
         //the value of the var that is applied, this field is also used as cache to store the temp func value that currently meets the objective, but not before all the variables of the
         //obj functions are evaluated. E.g. for min objective, it stores the min of the current objective function before it is fully updated.
@@ -326,12 +326,24 @@ typedef struct rtune_objective {
         rtune_var_apply_policy_t apply_policy;  //XXX: Not sure whether we need this objective-specific var apply policy since if each var is independently applied, it has its own apply_policy. We need this 
                                                 //only if there is situation that we need apply a var differently according to the different objectives that use the var
     } config[MAX_NUM_VARS];
-    void (*callback) (void *);             //callback when the objective is met, or when the objective is used,
-    void *callback_arg;
+    int num_vars; //num of independent variables that impact the objective func, thus the objective
 
-    float deviation_tolerance; /* absolute deviation tolerance */
-    int fidelity_window; /* consequent number of occurance of meeting the objective goal to accept that the objective is met */
-    int lookup_window; //how many states to check around the posibble state that meets the objective */
+    rtune_func_t * input_funcoefs[MAX_NUM_VARS];      //The input that are used to determine the objectives, typically are either objective function
+                                              // or constant depending on the objective kind
+    //This is used to store the actual value of the functions when the objective is met.
+    struct input_funcs {
+    	rtune_func_t * func;
+    	utype_t value;
+    	int index; //
+    } input_funcs[MAX_NUM_VARS];
+    int num_funcs;                    //num of models in the input
+
+    struct input_coefs {
+    	utype_t coef;
+    	rtune_data_type_t type;
+    } input_coefs[MAX_NUM_VARS];
+    int num_coefs;
+
 } rtune_objective_t;
 
 typedef struct rtune_region {
