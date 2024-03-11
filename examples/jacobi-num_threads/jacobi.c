@@ -332,9 +332,9 @@ double jacobi_omp(int n, int m, REAL dx, REAL dy, REAL alpha, REAL omega, REAL *
     rtune_func_set_update_schedule_attr(exe_time, RTUNE_UPDATE_REGION_BEGIN_END_DIFF, RTUNE_UPDATE_BATCH_ACCUMULATE, RTUNE_DEFAULT_NONE, RTUNE_DEFAULT_NONE, RTUNE_DEFAULT_NONE );
     rtune_objective_t * min_exe_time = rtune_objective_add_min(jacobi_region, "min exe time", exe_time);
     //rtune_objective_set_search_strategy(min_exe_time, RTUNE_OBJECTIVE_SEARCH_UNIMODAL_ON_THE_FLY);
-    rtune_objective_set_search_strategy(min_exe_time, RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_AFTER_COMPLETE);
-    //rtune_objective_set_search_strategy(min_exe_time, RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_ON_THE_FLY);
-    rtune_objective_set_fidelity_attr(min_exe_time, 0.20, 2, 4);
+    //rtune_objective_set_search_strategy(min_exe_time, RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_AFTER_COMPLETE);
+    rtune_objective_set_search_strategy(min_exe_time, RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_ON_THE_FLY);
+    rtune_objective_set_fidelity_attr(min_exe_time, 0.05, 2, 4);
 
     double elapsed = read_timer_ms();
     //while ((k <= mits) && (error > tol)) {
@@ -350,9 +350,9 @@ double jacobi_omp(int n, int m, REAL dx, REAL dy, REAL alpha, REAL omega, REAL *
                 uold[i][j] = u[i][j];
 
 
-//#pragma omp parallel
-//#pragma omp single
-//printf("omp_num_threads: %d\n", omp_get_num_threads());
+#pragma omp parallel
+#pragma omp single
+printf("omp_num_threads: %d\n", omp_get_num_threads());
 
 
 #pragma omp parallel for private(j,i, resid) reduction(+:error)

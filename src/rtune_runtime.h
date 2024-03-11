@@ -328,8 +328,6 @@ typedef struct rtune_objective {
     } config[MAX_NUM_VARS];
     int num_vars; //num of independent variables that impact the objective func, thus the objective
 
-    rtune_func_t * input_funcoefs[MAX_NUM_VARS];      //The input that are used to determine the objectives, typically are either objective function
-                                              // or constant depending on the objective kind
     //This is used to store the actual value of the functions when the objective is met.
     struct input_funcs {
     	rtune_func_t * func;
