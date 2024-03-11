@@ -48,6 +48,39 @@ void rtune_region_fini(rtune_region_t *region) {
     num_regions--; //not thread-safe
 }
 
+inline static utype_t rtune_stvar_get_value(stvar_t *stvar, int index) {
+	utype_t v;
+	switch (stvar->type) {
+	case RTUNE_short:
+		v = (utype_t)((short*) stvar->states)[index];
+		break;
+	case RTUNE_int:
+		v = (utype_t)((int*) stvar->states)[index];
+		break;
+	case RTUNE_long:
+		v = (utype_t)((long*) stvar->states)[index];
+		break;
+	case RTUNE_float:
+		v = (utype_t)((float*) stvar->states)[index];
+		break;
+	case RTUNE_double:
+		v = (utype_t)((double*) stvar->states)[index];
+		break;
+	default:
+		v = (utype_t)((void**) stvar->states)[index];
+		break;
+	}
+	return v;
+}
+
+utype_t rtune_var_get_value(rtune_var_t * var, int index) {
+	return rtune_stvar_get_value(&(var->stvar), index);
+}
+
+utype_t rtune_func_get_value(rtune_func_t * func, int index) {
+	return rtune_stvar_get_value(&(func->stvar), index);
+}
+
 static void * rtune_malloc_4_states(stvar_t *stvar) {
     //allocate memory for storing the state of the variable
     int var_size = 2;
@@ -737,31 +770,6 @@ void rtune_objective_add_callback(rtune_objective_t * obj, void (*callback) (voi
         STVAR_UPDATE_NEXT_STATE(TYPE, stvar);          \
     }
 
-inline static utype_t rtune_stvar_get_value(stvar_t *stvar, int index) {
-	utype_t v;
-	switch (stvar->type) {
-	case RTUNE_short:
-		v = (utype_t)((short*) stvar->states)[index];
-		break;
-	case RTUNE_int:
-		v = (utype_t)((int*) stvar->states)[index];
-		break;
-	case RTUNE_long:
-		v = (utype_t)((long*) stvar->states)[index];
-		break;
-	case RTUNE_float:
-		v = (utype_t)((float*) stvar->states)[index];
-		break;
-	case RTUNE_double:
-		v = (utype_t)((double*) stvar->states)[index];
-		break;
-	default:
-		v = (utype_t)((void**) stvar->states)[index];
-		break;
-	}
-	return v;
-}
-
 inline static utype_t rtune_stvar_apply(stvar_t * stvar, int index) {
 	utype_t v = rtune_stvar_get_value(stvar, index);
     if (stvar->applier) stvar->applier(v._typed_value);
@@ -1182,29 +1190,28 @@ static int rtune_objective_evaluate_min_exhaustive_after_complete(rtune_objectiv
     return min_index;
 }
 
-#define STVAR_FIND_MIN_EXHAUSTIVE_ON_THE_FLY(TYPE, stvar, minIndex, cache) \
+#define STVAR_FIND_MIN_EXHAUSTIVE_ON_THE_FLY(TYPE, stvar, minIndex, minV) \
     TYPE *states = (TYPE*) stvar->states;          \
-    TYPE min = states[stvar->num_states-1];               \
-    if (min < cache->_##TYPE##_value)  {                  \
-        *cache = (utype_t)min;                     \
+    TYPE temp = states[stvar->num_states-1];               \
+    if (temp < cache->_##TYPE##_value)  {                  \
+        *minV = (utype_t)temp;                     \
         minIndex = stvar->num_states-1;         \
     }
 
-static int rtune_objective_evaluate_min_exhaustive_on_the_fly(rtune_objective_t * obj) {
+static int rtune_objective_evaluate_min_exhaustive_on_the_fly(rtune_objective_t * obj, utype_t *minV) {
     rtune_func_t * func = obj->input_funcs[0].func;
-    utype_t * cache = &(obj->input_funcs[0].value);
     stvar_t * stvar = &func->stvar;
     int min_index = -1;
     if (stvar->type == RTUNE_short) {
-        STVAR_FIND_MIN_EXHAUSTIVE_ON_THE_FLY(short, stvar, min_index, cache);
+        STVAR_FIND_MIN_EXHAUSTIVE_ON_THE_FLY(short, stvar, min_index, minV);
     } else if (stvar->type == RTUNE_int) {
-        STVAR_FIND_MIN_EXHAUSTIVE_ON_THE_FLY(int, stvar, min_index, cache);
+        STVAR_FIND_MIN_EXHAUSTIVE_ON_THE_FLY(int, stvar, min_index, minV);
     } else if (stvar->type == RTUNE_long) {
-        STVAR_FIND_MIN_EXHAUSTIVE_ON_THE_FLY(long, stvar, min_index, cache);
+        STVAR_FIND_MIN_EXHAUSTIVE_ON_THE_FLY(long, stvar, min_index, minV);
     } else if (stvar->type == RTUNE_float) {
-        STVAR_FIND_MIN_EXHAUSTIVE_ON_THE_FLY(float, stvar, min_index, cache);
+        STVAR_FIND_MIN_EXHAUSTIVE_ON_THE_FLY(float, stvar, min_index, minV);
     } else if (stvar->type == RTUNE_double) {
-        STVAR_FIND_MIN_EXHAUSTIVE_ON_THE_FLY(double, stvar, min_index, cache);
+        STVAR_FIND_MIN_EXHAUSTIVE_ON_THE_FLY(double, stvar, min_index, minV);
     } else min_index = -1;
     return min_index;
 }
@@ -1735,6 +1742,7 @@ void rtune_region_end(rtune_region_t * region) {
                 //           ((double *) (obj->input_funcs[0].func->stvar.states))[index]);
 
                 rtune_func_t *func = obj->input_funcs[0].func;
+                rtune_var_t * var = func->input_vars[0]; //This should be the same as obj->config[0].var;
                 int index = -1;
                 int var_index = -1;
 
@@ -1745,13 +1753,11 @@ void rtune_region_end(rtune_region_t * region) {
                     rtune_func_print_doubleFunc_shortVar(func, count);
                     index = rtune_objective_min_unimodal_gradient_1var(obj);
                     if (index >= 0) {
-                        var_index = obj->input_funcs[0].func->input[index];
-                        printf("min objective is met: index: %d, var: %d, func: %.2f\n", index,
-                               ((short *) (obj->input_funcs[0].func->input_vars[0]->stvar.states))[var_index],
-                               ((double *) (obj->input_funcs[0].func->stvar.states))[index]);
                         obj->status = RTUNE_STATUS_OBJECTIVE_MET;
+                        var_index = func->input[index];
+                        printf("min objective is met: index: %d, var: %d, func: %.2f\n", index,
+                        		rtune_var_get_value(var, var_index)._short_value, rtune_func_get_value(func, index)._double_value);
                     	//apply the variable configuration for the objective that is just met
-                    	rtune_var_t * var = obj->input_funcs[0].func->input_vars[0];
                     	obj->config[0].value = rtune_var_apply(var, var_index, count);
                     	obj->config[0].var = var;
                     	obj->config[0].index = var_index;
@@ -1759,25 +1765,23 @@ void rtune_region_end(rtune_region_t * region) {
                     	obj->config[0].last_iteration_applied = count;
 
                     	obj->input_funcs[0].index = index;
-                    	obj->input_funcs[0].value = rtune_stvar_get_value(&(obj->input_funcs[0].func->stvar), index);
+                    	obj->input_funcs[0].value = rtune_func_get_value(func, index);
 
                     	//call the callback of the objective
                     	if (obj->callback != NULL) obj->callback(obj->callback_arg);
                     }
-                    printf("######################################################################################################\n\n");
+                    printf("######################################################################################################\n");
                 } else if (obj->search_strategy == RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_AFTER_COMPLETE &&
                            func->status == RTUNE_STATUS_UPDATE_COMPLETE) {
-                    printf("Evaluating min objective with exhaustive search after sampling complete ...: ");
+                    printf("####### Evaluating min objective with exhaustive search after sampling complete ...: #######\n");
                     index = rtune_objective_evaluate_min_exhaustive_after_complete(obj);
                     obj->status = RTUNE_STATUS_OBJECTIVE_MET;
-                    var_index = obj->input_funcs[0].func->input[index];
-                    if (index >= 0)
+                    if (index >= 0) {
+                    	var_index = func->input[index];
                         printf("min objective is met: index: %d, var: %d, func: %.2f\n", index,
-                               ((short *) (obj->input_funcs[0].func->input_vars[0]->stvar.states))[var_index],
-                               ((double *) (obj->input_funcs[0].func->stvar.states))[index]);
-                    printf("\n");
+                        		rtune_var_get_value(var, var_index)._short_value, rtune_func_get_value(func, index)._double_value);
+                    }
                 	//apply the variable configuration for the objective that is just met
-                	rtune_var_t * var = obj->input_funcs[0].func->input_vars[0];
                 	obj->config[0].value = rtune_var_apply(var, var_index, count);
                 	obj->config[0].var = var;
                 	obj->config[0].index = var_index;
@@ -1785,35 +1789,41 @@ void rtune_region_end(rtune_region_t * region) {
                 	obj->config[0].last_iteration_applied = count;
 
                 	obj->input_funcs[0].index = index;
-                   	obj->input_funcs[0].value = rtune_stvar_get_value(&(obj->input_funcs[0].func->stvar), index);
+                   	obj->input_funcs[0].value = rtune_func_get_value(func, index);
 
                 	//call the callback of the objective
                 	if (obj->callback != NULL) obj->callback(obj->callback_arg);
+                    printf("######################################################################################################\n");
                 } else if (obj->search_strategy == RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_ON_THE_FLY) {
-                    printf("Evaluating min objective with exhaustive search on the fly ...: ");
-                    index = rtune_objective_evaluate_min_exhaustive_on_the_fly(obj);
-                    var_index = obj->input_funcs[0].func->input[index];
-                    if (index >= 0)
-                        printf("min objective is met: index: %d, var: %d, func: %.2f\n", index,
-                               ((short *) (obj->input_funcs[0].func->input_vars[0]->stvar.states))[var_index],
-                               ((double *) (obj->input_funcs[0].func->stvar.states))[index]);
-                    printf("\n");
-                    if (func->status == RTUNE_STATUS_UPDATE_COMPLETE) {
-                        obj->status = RTUNE_STATUS_OBJECTIVE_MET;
-                    	//apply the variable configuration for the objective that is just met
-                    	rtune_var_t * var = obj->input_funcs[0].func->input_vars[0];
-                    	obj->config[0].value = rtune_var_apply(var, var_index, count);
-                    	obj->config[0].var = var;
+                    printf("##### Evaluating min objective with exhaustive search on the fly ...: ########\n");
+                    utype_t minValue;
+                    index = rtune_objective_evaluate_min_exhaustive_on_the_fly(obj, &minValue);
+                    if (index >= 0) { //Here we store the temp min in the config and input_funcs
+                    	var_index = func->input[index];
+                    	obj->config[0].value = rtune_var_get_value(var, var_index);
                     	obj->config[0].index = var_index;
+                    	obj->config[0].var = var;
                     	obj->config[0].preference_right = 1;
-                    	obj->config[0].last_iteration_applied = count;
+                    	//obj->config[0].last_iteration_applied = count;
 
                     	obj->input_funcs[0].index = index;
-                    	obj->input_funcs[0].value = rtune_stvar_get_value(&(obj->input_funcs[0].func->stvar), index);
+                    	obj->input_funcs[0].value = minValue;
+
+                    	printf("min objective is met: index: %d, var: %d, func: %.2f\n", index,
+                        		rtune_var_get_value(var, var_index)._short_value, minValue._double_value);
+                    }
+                    if (func->status == RTUNE_STATUS_UPDATE_COMPLETE) {
+                        obj->status = RTUNE_STATUS_OBJECTIVE_MET;
+                        var_index = obj->config[0].index;
+                    	rtune_var_apply(var, var_index, count);
+                    	obj->config[0].last_iteration_applied = count;
+                    	//apply the variable configuration for the objective that is just met
+
 
                     	//call the callback of the objective
                     	if (obj->callback != NULL) obj->callback(obj->callback_arg);
                     }
+                    printf("######################################################################################################\n");
                 } else {
                 	//unsupported min search strategy
                 	printf("unsupported min search strategy\n");

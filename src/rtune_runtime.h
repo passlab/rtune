@@ -280,10 +280,11 @@ typedef struct rtune_func {
     int batch_size;      //how many iterations to update the variable and collect the sample
     int update_iteration_stride;    //The number of iterations between each sample
 
-    rtune_var_t * active_var; //the variable which is being updated
+    rtune_var_t *active_var; //the variable which is being updated
+
     rtune_var_t *input_vars[MAX_NUM_VARS]; /* the input var and coefficient this variable */
-    utype_t input_coefs[MAX_NUM_VARS];
     int num_vars;
+    utype_t input_coefs[MAX_NUM_VARS];
     int num_coefs;
 
     int *input; //The input of var values represented by the index of the state of each variable.
