@@ -1193,7 +1193,7 @@ static int rtune_objective_evaluate_min_exhaustive_after_complete(rtune_objectiv
 #define STVAR_FIND_MIN_EXHAUSTIVE_ON_THE_FLY(TYPE, stvar, minIndex, minV) \
     TYPE *states = (TYPE*) stvar->states;          \
     TYPE temp = states[stvar->num_states-1];               \
-    if (temp < cache->_##TYPE##_value)  {                  \
+    if (temp < minV->_##TYPE##_value)  {                  \
         *minV = (utype_t)temp;                     \
         minIndex = stvar->num_states-1;         \
     }
@@ -1332,6 +1332,50 @@ static int rtune_objective_evaluate_max_exhaustive_on_the_fly(rtune_objective_t 
         STVAR_FIND_MAX_EXHAUSTIVE_ON_THE_FLY(double, stvar, max_index, cache);
     } else max_index = -1;
     return max_index;
+}
+
+/**
+ * This function find the min in the state starting from index start for count number of elements. If a pointer (minValue) to a variable
+ * is provided, the value in the variable will be included for finding the min, and the min found by this function will be copied
+ * back to the minValue pointer variable
+ * @param stvar: the stvar
+ * @param start: starting states
+ * @param count: the number of states to look for the min
+ * @param minValue: if provided, to provide the initial min value for comparision and be used for returning the initial value
+ * @return: the index of the state that has the min, if not found, return -1
+ */
+
+
+#define STVAR_FIND_MIN_EXHAUSTIVE(TYPE, stvar, start, count, minIndex, minValue) \
+    TYPE *states = (TYPE*) stvar->states;          \
+    TYPE temp; \
+    int i;                          \
+    for(i=start; i<start+count; i++) {           \
+        if (states[i] <= minValue->_##TYPE##_value) {            \
+            temp = states[i];                \
+            minIndex = i;                  \
+        }                                 \
+    } \
+	if (i < start+count) { minValue->_##TYPE##_value = temp; }
+
+
+int rtune_stavr_find_min(stvar_t * stvar, int start, int count, utype_t *minValue) {
+	int num_states = stvar->num_states;
+	if (start + count > num_states) return -1;
+
+    int index = -1;
+    if (stvar->type == RTUNE_short) {
+        STVAR_FIND_MIN_EXHAUSTIVE(short, stvar, start, count, index, minValue);
+    } else if (stvar->type == RTUNE_int) {
+        STVAR_FIND_MIN_EXHAUSTIVE(short, stvar, start, count, index, minValue);
+    } else if (stvar->type == RTUNE_long) {
+        STVAR_FIND_MIN_EXHAUSTIVE(short, stvar, start, count, index, minValue);
+    } else if (stvar->type == RTUNE_float) {
+        STVAR_FIND_MIN_EXHAUSTIVE(short, stvar, start, count, index, minValue);
+    } else if (stvar->type == RTUNE_double) {
+        STVAR_FIND_MIN_EXHAUSTIVE(short, stvar, start, count, index, minValue);
+    } else index = -1;
+    return index;
 }
 
 
@@ -1775,6 +1819,8 @@ void rtune_region_end(rtune_region_t * region) {
                            func->status == RTUNE_STATUS_UPDATE_COMPLETE) {
                     printf("####### Evaluating min objective with exhaustive search after sampling complete ...: #######\n");
                     index = rtune_objective_evaluate_min_exhaustive_after_complete(obj);
+                    utype_t *minValue = &(obj->input_funcs[0].value); //For getting the current min value
+                    index = rtune_stavr_find_min(&(func->stvar), 0, func->stvar.num_states, minValue);
                     obj->status = RTUNE_STATUS_OBJECTIVE_MET;
                     if (index >= 0) {
                     	var_index = func->input[index];
@@ -1796,9 +1842,10 @@ void rtune_region_end(rtune_region_t * region) {
                     printf("######################################################################################################\n");
                 } else if (obj->search_strategy == RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_ON_THE_FLY) {
                     printf("##### Evaluating min objective with exhaustive search on the fly ...: ########\n");
-                    utype_t minValue;
-                    index = rtune_objective_evaluate_min_exhaustive_on_the_fly(obj, &minValue);
+                    utype_t *minValue = &(obj->input_funcs[0].value); //For getting the current min value
+                    index = rtune_objective_evaluate_min_exhaustive_on_the_fly(obj, minValue);
                     if (index >= 0) { //Here we store the temp min in the config and input_funcs
+                    	obj->input_funcs[0].index = index;
                     	var_index = func->input[index];
                     	obj->config[0].value = rtune_var_get_value(var, var_index);
                     	obj->config[0].index = var_index;
@@ -1806,11 +1853,8 @@ void rtune_region_end(rtune_region_t * region) {
                     	obj->config[0].preference_right = 1;
                     	//obj->config[0].last_iteration_applied = count;
 
-                    	obj->input_funcs[0].index = index;
-                    	obj->input_funcs[0].value = minValue;
-
                     	printf("min objective is met: index: %d, var: %d, func: %.2f\n", index,
-                        		rtune_var_get_value(var, var_index)._short_value, minValue._double_value);
+                        		rtune_var_get_value(var, var_index)._short_value, obj->input_funcs[0].value._double_value);
                     }
                     if (func->status == RTUNE_STATUS_UPDATE_COMPLETE) {
                         obj->status = RTUNE_STATUS_OBJECTIVE_MET;
@@ -1886,7 +1930,7 @@ void rtune_region_end(rtune_region_t * region) {
                     printf("\n");
                 } else if (obj->search_strategy == RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_ON_THE_FLY) {
                     printf("Evaluating max objective with exhaustive on the fly ...: ");
-                    index = rtune_objective_evaluate_min_exhaustive_on_the_fly(obj);
+                    index = rtune_objective_evaluate_max_exhaustive_on_the_fly(obj);
                     if (index >= 0) {
                     	var_index = obj->input_funcs[0].func->input[index];
                         printf("max objective is met: index: %d, var: %d, func: %.2f\n", index,
