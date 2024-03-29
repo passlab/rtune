@@ -59,18 +59,12 @@ typedef enum rtune_kind {
  */
 typedef enum rtune_status {
     RTUNE_STATUS_CREATED,
+	RTUNE_STATUS_RESETTED,
     RTUNE_STATUS_SAMPLING, //collect sample, profiling for a var/func/objective/region
     RTUNE_STATUS_UPDATE_COMPLETE, //update of the var/func/objective/region are completed, but in the middle of a schedule.
-    RTUNE_STATUS_UPDATE_SCHEDULE_COMPLETE, //update of the var/func/objective/region are completed, the batch for the last update is complete as well.
     RTUNE_STATUS_MODELED, //models for a func, or objective funcs have been built
-    RTUNE_STATUS_OBJECTIVE_TO_BE_EVALUATED, //a temp status to indicate that the obj should be evaluated in the current iteration
-    RTUNE_STATUS_OBJECTIVE_EVALUATING, //an object is still being evaluated
     RTUNE_STATUS_OBJECTIVE_MET, //an objective or multiple objectives have been met
-    RTUNE_STATUS_OBJECTIVE_INACTION, //a met objective is used
-    RTUNE_STATUS_OBJECTIVE_RETIRED, //an objective is met, applied (inaction) and retired, only applicable for some objectives
-    RTUNE_STATUS_REGION_TUNING_COMPLETE, //rtune tuning for the region has completely done and no need to rtune anymore
-    RTUNE_STATUS_REGION_COMPLETE, //rtune tuning for the region has completely done and all the configuration have applied, once for all, and no need to rtune anymore
-    RTUNE_STATUS_REGION_ALL_OBJECTIVES_MET,
+    RTUNE_STATUS_RETIRED, //when an obj/func/obj is not longer needed anymore
 } rtune_status_t;
 
 //#define RTUNE_DEFAULT_NONE -1
@@ -131,10 +125,19 @@ typedef enum rtune_objective_kind {
     RTUNE_OBJECTIVE_THRESHOLD_DOWN,
 } rtune_objective_kind_t;
 
+typedef enum rtune_comparison_operator {
+	LESS_THAN,
+	GREATER_THAN,
+	EQUAL,
+	NOT_EQUAL,
+	LESS_OR_EQUAL,
+	GREATER_OR_EQUAL,
+} rtune_comparison_operator_t;
+
 /**
- * var search strategy in order to meet the objective
+ * Search strategy for the objective
  */
-typedef enum rtune_objective_search_strategy {
+typedef enum rtune_objective_attribute {
     /* search strategy */
     RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_AFTER_COMPLETE,
     RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_ON_THE_FLY,
@@ -148,7 +151,17 @@ typedef enum rtune_objective_search_strategy {
     //The inhouse binary gradient approach: given a known number of sorted input (x1,x2,...x0,...,xn) for a variable X,
     //x0 is the value in the middle, collect f(x1) (or f(xn)) and f(x0), calculate the gradient g(x1->x0) = (f(x0) - f(x1))/(x0 - x1).
     //For minization, if g(x1->x0) > 0;
-} rtune_objective_search_strategy_t;
+} rtune_objective_attribute_t;
+
+/**
+ * common actions for events such as objective is met, a var or func is updated
+ */
+typedef enum rtune_action {
+	RTUNE_METACTION_NOACTION,
+	RTUNE_METACTION_RESET, //Reset to the resetted state for retuning
+	RTUNE_METACTION_CONFIG, //call the applier of the variable that leads to the func to meet the objective, only for var
+	RTUNE_METACTION_CONFIG_RESET, //call the applier of the variable that leads to the func to meet the objective, only for var
+} rtune_action_t;
 
 #define RTUNE_OBJECTIVE_SEARCH_DEFAULT RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_ON_THE_FLY
 
@@ -278,7 +291,7 @@ typedef struct rtune_func {
     rtune_var_update_kind_t update_policy; //accumulate or straight policy
     int update_iteration_start; //When the initial sample is collected, which is the sampling_init_iteration count of the rtune_region iteration
     int batch_size;      //how many iterations to update the variable and collect the sample
-    int update_iteration_stride;    //The number of iterations between each sample
+    int update_iteration_stride;    //The number of iterations between 0each sample
 
     rtune_var_t *active_var; //the variable which is being updated
 
@@ -293,6 +306,8 @@ typedef struct rtune_func {
     //Objectives that use this function
     struct rtune_objective *objectives[MAX_NUM_OBJ];
     int num_objs;
+
+    int unused_updates;
 } rtune_func_t;
 
 /**
@@ -306,27 +321,36 @@ typedef struct rtune_func {
 typedef struct rtune_objective {
     char * name; //a meaningful name
     rtune_objective_kind_t kind;
+    int max_num_mets;   //An objective can be met multiple times, this set the max number of mets an objective is allowed
+                        //By default, this max is 1, meaning when an objective is met, it is over, -1 is for unlimited mets.
+    int num_mets; //how many times that objective has been met so far.
     rtune_status_t status;
-    void (*callback) (void *);             //callback when the objective is met, or when the objective is used,
+    void (*callback) (struct rtune_objective*, void *);             //callback when the objective is met, or when the objective is used,
     void *callback_arg;
-    rtune_objective_search_strategy_t search_strategy; //when the obj should be evaluated, after the funcs are completed updated or while they are being updated
+    rtune_objective_attribute_t search_strategy; //when the obj should be evaluated, after the funcs are completed updated or while they are being updated
+    rtune_action_t metaction; //What action to take when the objectve is met
     float deviation_tolerance; /* absolute deviation tolerance */
-    int fidelity_window; /* consequent number of occurance of meeting the objective goal to accept that the objective is met */
-    int lookup_window; //how many states to check around the posibble state that meets the objective */
+    int fidelity_window; /* consequent number of occurrence of meeting the objective goal to accept that the objective is met */
+    int lookup_window; //how many states to check around the possible state that meets the objective */
 
     /** var configuration for this objective. To apply the configuration, the applier of each var is called according to the apply_policy of each var, the value applied is what is indexed in this struct*/
-    struct var_config {
+    struct input_var {
         rtune_var_t * var;
         //the value of the var that is applied, this field is also used as cache to store the temp func value that currently meets the objective, but not before all the variables of the
         //obj functions are evaluated. E.g. for min objective, it stores the min of the current objective function before it is fully updated.
         utype_t value; //
+        rtune_action_t metaction;
         int index; //The index for the state value of the var that will be applied to the system/app when the objective that depends on this var is met
         int preference_right; //preference of the value of the var for this objective depending on the list of values of this var, e.g. if the list values is sorted min-max, preference_right true
                               //means that for the similar value of the obj function for this objective, a value toward greater (max) should be used
         int last_iteration_applied; //the last iteration this config is applied
+
+        //The applier-related fields are copied in this config since we can delete those variables after obj is met and there is no need for keeping the var other than their configruation
         rtune_var_apply_policy_t apply_policy;  //XXX: Not sure whether we need this objective-specific var apply policy since if each var is independently applied, it has its own apply_policy. We need this 
                                                 //only if there is situation that we need apply a var differently according to the different objectives that use the var
-    } config[MAX_NUM_VARS];
+        void (*applier) (void *); //applier is a function that take the var value as arg to apply the var to the caller env
+
+    } input_vars[MAX_NUM_VARS];
     int num_vars; //num of independent variables that impact the objective func, thus the objective
 
     //This is used to store the actual value of the functions when the objective is met.
@@ -334,6 +358,7 @@ typedef struct rtune_objective {
     	rtune_func_t * func;
     	utype_t value;
     	int index; //
+        rtune_action_t metaction;
     } input_funcs[MAX_NUM_VARS];
     int num_funcs;                    //num of models in the input
 
@@ -342,7 +367,6 @@ typedef struct rtune_objective {
     	rtune_data_type_t type;
     } input_coefs[MAX_NUM_VARS];
     int num_coefs;
-
 } rtune_objective_t;
 
 typedef struct rtune_region {
@@ -365,6 +389,7 @@ typedef struct rtune_region {
     //model definition
     rtune_objective_t objs[MAX_NUM_OBJ];
     int num_objs;
+    int num_retired_objs;
 
     FILE * rtune_logfile;
 } rtune_region_t;
@@ -433,17 +458,20 @@ rtune_objective_t * rtune_objective_add_select2(rtune_region_t *region, char *na
 
 rtune_objective_t * rtune_objective_add_select(rtune_region_t *region, char *name, rtune_objective_kind_t select_kind, int num_models, rtune_func_t * models[], int model_select[]); /* the purpose of selecting which model to use is dependent on the select */
 rtune_objective_t * rtune_objective_add_threshold(rtune_region_t *region, char * name, rtune_objective_kind_t threshold_kind, rtune_func_t *model, void *threshold); //going up/down to reach a threshold
-void rtune_objective_add_callback(rtune_objective_t * obj, void (*callback) (void *), void *arg);
+void rtune_objective_add_callback(rtune_objective_t * obj, void (*callback) (rtune_objective_t *, void *), void *arg);
 
 /**
  * API for setting the fidelity attr of an objective: to manage the fidelity of the model, 
  * tolerance is a range that objective should be in,
- * and window is the number of consecutive occurance that objective is met
+ * and window is the number of consecutive occurrence that objective is met
  */
-void rtune_objective_set_var_sample_attr(rtune_objective_t *obj, int sample_start_iteration, int num_samples, int sample_rate, int sample_stride); //start from the start_iteration, for every sample_rate+stride iterations, we pick one update of the variables. The update is for sample_rate iterations
 void rtune_objective_set_fidelity_attr(rtune_objective_t *obj, float deviation_tolerance, int fidelity_window, int lookup_window);
-int  rtune_objective_is_met(rtune_objective_t *obj); //check whether objective is met or not */
-void rtune_objective_set_search_strategy(rtune_objective_t *obj, rtune_objective_search_strategy_t search_strategy);
+void rtune_objective_set_max_mets(rtune_objective_t *obj, int max); //set the max number of mets an objective is allowed. by default it is 1, -1 for unlimited amount of occurrence
+int  rtune_objective_is_met(rtune_objective_t *obj, int * occurence); //check whether objective is met or not */
+void rtune_objective_set_search_strategy(rtune_objective_t *obj, rtune_objective_attribute_t search_strategy);
+void rtune_objective_set_metaction(rtune_objective_t *obj, rtune_action_t metaction);
+void rtune_objective_set_metaction_var(rtune_objective_t *obj, rtune_var_t *var, rtune_action_t metaction);
+void rtune_objective_set_metaction_func(rtune_objective_t *obj, rtune_func_t * func, rtune_action_t metaction);
 
 void rtune_objective_set_apply_policy(rtune_objective_t * obj,  rtune_var_apply_policy_t apply_policy); //set the apply policy for all the variables that are the input for the object func
 

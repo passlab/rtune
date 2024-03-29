@@ -319,10 +319,10 @@ double jacobi_omp(int n, int m, REAL dx, REAL dy, REAL alpha, REAL omega, REAL *
      */
     rtune_region_t * jacobi_region = rtune_region_init("jacobi_region_num_threads_perf");
 
-    short max_num_threads = 12;
-    short min_num_threads = 1;
-    short step_num_threads = -1;
-    rtune_var_t * num_threads = rtune_var_add_range(jacobi_region, "num_threads", 12, RTUNE_short, &max_num_threads, &min_num_threads, &step_num_threads);
+    int max_num_threads = 12;
+    int min_num_threads = 1;
+    int step_num_threads = -1;
+    rtune_var_t * num_threads = rtune_var_add_range(jacobi_region, "num_threads", 12, RTUNE_int, &max_num_threads, &min_num_threads, &step_num_threads);
     rtune_var_set_applier_policy(num_threads, omp_set_num_threads, RTUNE_VAR_APPLY_ON_UPDATE);
  //   rtune_var_t * num_threads2 = rtune_var_add_range(jacobi_region, "num_threads 2", 6, RTUNE_short, &max_num_threads, &min_num_threads, &step_num_threads);
     rtune_var_set_update_schedule_attr(num_threads, RTUNE_UPDATE_REGION_BEGIN, RTUNE_UPDATE_LIST_SERIES, 0, 20, 0);
@@ -332,8 +332,8 @@ double jacobi_omp(int n, int m, REAL dx, REAL dy, REAL alpha, REAL omega, REAL *
     rtune_func_set_update_schedule_attr(exe_time, RTUNE_UPDATE_REGION_BEGIN_END_DIFF, RTUNE_UPDATE_BATCH_ACCUMULATE, RTUNE_DEFAULT_NONE, RTUNE_DEFAULT_NONE, RTUNE_DEFAULT_NONE );
     rtune_objective_t * min_exe_time = rtune_objective_add_min(jacobi_region, "min exe time", exe_time);
     //rtune_objective_set_search_strategy(min_exe_time, RTUNE_OBJECTIVE_SEARCH_UNIMODAL_ON_THE_FLY);
-    rtune_objective_set_search_strategy(min_exe_time, RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_AFTER_COMPLETE);
-    //rtune_objective_set_search_strategy(min_exe_time, RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_ON_THE_FLY);
+    //rtune_objective_set_search_strategy(min_exe_time, RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_AFTER_COMPLETE);
+    rtune_objective_set_search_strategy(min_exe_time, RTUNE_OBJECTIVE_SEARCH_EXHAUSTIVE_ON_THE_FLY);
     rtune_objective_set_fidelity_attr(min_exe_time, 0.05, 2, 4);
 
     double elapsed = read_timer_ms();
@@ -352,7 +352,7 @@ double jacobi_omp(int n, int m, REAL dx, REAL dy, REAL alpha, REAL omega, REAL *
 
 #pragma omp parallel
 #pragma omp single
-printf("omp_num_threads: %d\n", omp_get_num_threads());
+printf("iteration: %d, omp_num_threads: %d\n", k-1, omp_get_num_threads());
 
 
 #pragma omp parallel for private(j,i, resid) reduction(+:error)
