@@ -51,3 +51,12 @@ defined objective during the computation.
 		export LD_LIBRARY_PATH=../../install/lib
 		./LULESH-boundary
 
+### Acknowledgement and Citation
+Funding for this research and development was provided by the National Science Foundation 
+under award No. 2001580 and 2015254. 
+
+The work is published at in the follwing paper: ISPASS-2024
+
+Yonghong Yan, Kewei Yan, and Anjia Wang, RTune: Towards Automated and Coordinated Optimization of Computing and 
+Computational Objectives of Parallel Iterative Applications, ISPASS-2024, 2024 IEEE International Symposium 
+on Performance Analysis of Systems and Software May 5-7, 2024, Indianapolis, Indiana
